@@ -11,6 +11,18 @@ This project, essentially a wrapper over the official [outline-cli](https://gith
 
 ----
 
+## Legal Notice
+
+This project is an independent work and is not affiliated, endorsed, authorized, or sponsored by Jigsaw LLC or any of its subsidiaries or affiliates. Outline and the Outline logo are trademarks and/or registered trademarks of Jigsaw LLC in the U.S. and/or other countries. All rights reserved to their respective owners.
+
+The purpose of this project is purely educational and non-commercial. The code and information found within this project are for educational use only and are not intended for any kind of commercial use.
+
+Use this software at your own risk. The creators cannot be held responsible for any misuse or damages caused by this software.
+
+This notice serves as a disclaimer. Any violations of Jigsaw's policies or trademarks are not intentional.
+
+----
+
 ## License
 
 Licensed under the terms of the [MIT License](https://github.com/Kir-Antipov/outline-cli/blob/HEAD/LICENSE.md).
