@@ -1,0 +1,92 @@
+#!/bin/sh
+#
+# Connect to a Shadowsocks server.
+
+#################################################
+#   Configure internal implementation details.  #
+#################################################
+CONNECTION_PID=""
+
+#################################################
+# Connects to a Shadowsocks server using
+# the specified access key.
+# Arguments:
+#   $1. The access key to use.
+#################################################
+connect() {
+  echo "${0}: unsupported operation" >& 2 # CONNECT_TEMPLATE &
+  CONNECTION_PID=$!
+  [ -n "${CONNECTION_PID}" ] && wait "${CONNECTION_PID}"
+}
+
+#################################################
+# Disconnects from the currently active server,
+# if any. Otherwise, does nothing.
+# Arguments:
+#   None
+#################################################
+disconnect() {
+  [ -n "${CONNECTION_PID}" ] && kill -TERM "${CONNECTION_PID}"
+}
+
+#################################################
+# Prints a brief help message.
+# Arguments:
+#   None
+# Outputs:
+#   Writes the help message to stdout.
+#################################################
+help() {
+  echo "Usage: ${0} [<args>] [<options>]"
+  echo
+  echo "Connect to a Shadowsocks server."
+  echo
+  echo "Examples:"
+  echo "  ${0} -transport \"ss://...\""
+  echo
+  echo "Options:"
+  echo "  -h, -help       Display this help text and exit"
+  echo "      -transport  The server access key (usually starts with \"ss://\")"
+}
+
+#################################################
+# Formats and prints the provided error message,
+# displays the help page, and terminates the
+# process.
+# Arguments:
+#   $1. The error message to format and print.
+# Outputs:
+#   Writes the formatted error message to stderr.
+# Returns:
+#   Never returns (exits with a status of 1).
+#################################################
+fatal_error() {
+  echo "${0}: ${1}" >& 2
+  help >& 2
+  exit 1
+}
+
+#################################################
+# The main entry point for the script.
+# Arguments:
+#   ... A list of the command line arguments.
+#################################################
+main() {
+  transport=""
+
+  # Parse the arguments and options.
+  while [ -n "${1}" ]; do
+    case "${1}" in
+      -h|-help|--help) help; exit 0 ;;
+      -t|-transport|--transport) transport="${2}"; shift ;;
+      -*) fatal_error "invalid option: ${1}" ;;
+      *) fatal_error "invalid argument: ${1}" ;;
+    esac
+    shift 2> /dev/null
+  done
+
+  connect "${transport}"
+}
+
+trap disconnect HUP INT QUIT TERM
+main "$@"
