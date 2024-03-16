@@ -1,0 +1,38 @@
+From 0dee551ff51ea6721858ee5fe4d58b48b6b1827a Mon Sep 17 00:00:00 2001
+From: Kir_Antipov <kp.antipov@gmail.com>
+Date: Sun, 16 Mar 2024 17:28:49 +0000
+Subject: [PATCH] Added a way to specify a custom DNS resolver
+
+See Jigsaw-Code/outline-apps#568
+---
+ x/examples/outline-cli/main.go | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/x/examples/outline-cli/main.go b/x/examples/outline-cli/main.go
+index 1be0096..82501c4 100644
+--- a/x/examples/outline-cli/main.go
++++ b/x/examples/outline-cli/main.go
+@@ -19,6 +19,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"log"
++	"net/url"
+ 	"os"
+ )
+
+@@ -49,6 +50,13 @@ func main() {
+ 	}
+ 	flag.Parse()
+
++	if transportUrl, _ := url.Parse(*app.TransportConfig); transportUrl != nil {
++		if dns := transportUrl.Query().Get("dns"); dns != "" {
++			app.RoutingConfig.DNSServerIP = dns
++		}
++	}
++	logging.Info.Printf("updated system DNS resolver: %v\n", app.RoutingConfig.DNSServerIP)
++
+ 	if err := app.Run(); err != nil {
+ 		logging.Err.Printf("%v\n", err)
+ 	}
+--
+2.44.0
