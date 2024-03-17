@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# Refresh a connection to a Shadowsocks server
+# in response to network events.
+
+# We only need to act when a wired or wireless
+# connection is activated or deactivated.
+# Exit early for all other types of network events.
+[ "${2}" = "up" ] || [ "${2}" = "down" ] || exit 0
+grep -sqE "type=(eth|wifi)" "${CONNECTION_FILENAME}" || exit 0
+
+case "${2}" in
+  # If the network went up, resume a suspended
+  # connection to a Shadowsocks server, if any.
+  up)
+    __vpn_manager status -q
+    if [ $? -eq 0 -o $? -eq 2 ]; then
+      __vpn_manager connect -q &
+    fi
+    ;;
+
+  # If the network went down, suspend a connection
+  # to a Shadowsocks server, if any, to prevent
+  # the system from reporting an interface with
+  # no internet access.
+  down) __vpn_manager disconnect -s -q & ;;
+esac
+
+# Always return a success status code
+# to avoid confusing the NetworkManager.
+exit 0
