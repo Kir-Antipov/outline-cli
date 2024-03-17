@@ -1,0 +1,642 @@
+#!/bin/sh
+#
+# Manage Shadowsocks server connections and related access keys.
+
+#################################################
+#            Configure app details.             #
+#################################################
+APP_NAME="outline"
+
+#################################################
+#             Configure file paths.             #
+#################################################
+DATA_DIRECTORY="/var/lib/${APP_NAME}"
+STORAGE_FILENAME="${DATA_DIRECTORY}/storage"
+SESSION_FILENAME="${DATA_DIRECTORY}/session"
+LOG_FILENAME="/var/log/${APP_NAME}"
+
+#################################################
+#            Configure notifications.           #
+#################################################
+NOTIFICATION_TITLE="`echo "${APP_NAME}" | sed "s/\\(.\\)/\\U\\1/"`"
+NOTIFICATION_ICON_SUCCESS="dialog-positive"
+NOTIFICATION_ICON_FAILURE="dialog-error"
+NOTIFICATION_TIMEOUT=5000
+
+NOTIFICATION_ICON_CONNECTED="network-wireless"
+NOTIFICATION_BODY_CONNECTED="Connected to %name% (%ip%)"
+
+NOTIFICATION_ICON_DISCONNECTED="network-offline"
+NOTIFICATION_BODY_DISCONNECTED="Disconnected from %name% (%ip%)"
+NOTIFICATION_BODY_DISCONNECTED_UNKNOWN="Disconnected"
+
+#################################################
+#   Configure internal implementation details.  #
+#################################################
+SOL="" # START_OF_LINE
+
+#################################################
+# Ensures that the storage file exists.
+# Arguments:
+#   None
+#################################################
+init_storage() {
+  [ -d "${DATA_DIRECTORY}" ] || (mkdir -p "${DATA_DIRECTORY}" && chmod 600 "${DATA_DIRECTORY}")
+  [ -f "${STORAGE_FILENAME}" ] || (touch "${STORAGE_FILENAME}" && chmod 600 "${STORAGE_FILENAME}")
+}
+
+#################################################
+# Ensures that the session file exists.
+# Arguments:
+#   None
+#################################################
+init_session() {
+  [ -d "${DATA_DIRECTORY}" ] || (mkdir -p "${DATA_DIRECTORY}" && chmod 600 "${DATA_DIRECTORY}")
+  [ -f "${SESSION_FILENAME}" ] || (touch "${SESSION_FILENAME}" && chmod 600 "${SESSION_FILENAME}")
+}
+
+#################################################
+# Formats and prints the provided error message.
+# Arguments:
+#   $1. The error message to format and print.
+# Outputs:
+#   Writes the formatted error message to stderr.
+# Returns:
+#   Always returns 1.
+#################################################
+error() {
+  echo "${0}: ${1}" >& 2
+  return 1
+}
+
+#################################################
+# Checks if the specified command exists.
+# Arguments:
+#   $1. The command to check.
+# Returns:
+#   0 if the specified command exists;
+#   otherwise, a non-zero status.
+#################################################
+command_exists() {
+  which "${1}" > /dev/null 2>& 1
+}
+
+#################################################
+# Sends a desktop notification.
+# Arguments:
+#   $1. The title of the notification.
+#   $2="". The body of the notification.
+#   $3="". The icon of the notification.
+#   $4=3000. The duration of the notification.
+# Returns:
+#   0 if the notification has been sent;
+#   otherwise, a non-zero status.
+#################################################
+send_notification() {
+  display_id="`ls /tmp/.X11-unix/X* 2> /dev/null | head -n 1 | sed "s|/tmp/.X11-unix/X||"`"
+  display=":${display_id:-0}"
+  display_user="`who | grep "(${display})" | head -n 1 | sed "s/\\s.*//"`"
+  display_user_id="`id -u "${display_user}" 2> /dev/null`"
+
+  if command_exists notify-send; then
+    sudo -u "${display_user}" \
+      DISPLAY="${display}" \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${display_user_id}/bus \
+      notify-send -a "${1}" -i "${3}" -t "${4:-3000}" "${1}" "${2}"
+  elif command_exists kdialog; then
+    sudo -u "${display_user}" \
+      DISPLAY="${display}" \
+      DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${display_user_id}/bus \
+      kdialog --passivepopup "${2}" "`expr "${4:-3000}" / 1000`" --title "${1}" --icon "${3}"
+  else
+    return 1
+  fi > /dev/null 2>& 1
+}
+
+#################################################
+# Asserts that the current user is "root" (i.e.,
+# a superuser). Otherwise, terminates the current
+# process.
+# Arguments:
+#   None
+# Outputs:
+#   Writes the error message, if any, to stderr.
+# Returns:
+#   0 if the current user is a superuser;
+#   otherwise, never returns (exits the shell
+#   with a status of 1).
+#################################################
+assert_is_root() {
+  [ "${EUID:-"`id -u`"}" -eq 0 ] && return
+
+  error "cannot query current connection status: Permission denied"
+  exit 1
+}
+
+#################################################
+# Checks if the given string is a valid transport
+# (i.e., the server access key).
+# Arguments:
+#   $1. The transport string to check.
+# Returns:
+#   0 if the given string is a valid transport;
+#   otherwise, a non-zero status.
+#################################################
+is_valid_transport() {
+  echo "${1}" | grep -q "ss://[a-zA-Z0-9+/=]*@[0-9.:]*"
+}
+
+#################################################
+# Extracts the server IP address from the given
+# access key.
+# Arguments:
+#   $1. The key to extract the IP address from.
+# Outputs:
+#   Writes the extracted IP address to stdout.
+# Returns:
+#   0 if the IP address was extracted;
+#   otherwise, a non-zero status.
+#################################################
+extract_key_ip() {
+  echo "${1}" | grep -o "@[0-9.:]*/\\|@[0-9.:]*$" | grep -o "[0-9.:]*"
+}
+
+#################################################
+# Extracts the name of the access key from
+# the given key entry.
+# Arguments:
+#   $1. The entry to extract the name from.
+# Outputs:
+#   Writes the extracted entry name to stdout.
+# Returns:
+#   0 if the entry name was extracted;
+#   otherwise, a non-zero status.
+#################################################
+extract_key_name() {
+  decode_key_name "`echo "${1}" | sed "s/=.*//"`"
+}
+
+#################################################
+# Extracts the transport string from the given
+# access key entry.
+# Arguments:
+#   $1. The entry to extract the transport from.
+# Outputs:
+#   Writes the extracted transport to stdout.
+# Returns:
+#   0 if the transport string was extracted;
+#   otherwise, a non-zero status.
+#################################################
+extract_key_transport() {
+  echo "${1}" | sed "s/[^=]*=//"
+}
+
+#################################################
+# Encodes the name of an access key.
+# Arguments:
+#   $1. The access key name to encode.
+# Outputs:
+#   Writes the encoded access key name to stdout.
+#################################################
+encode_key_name() {
+  echo "${1}" | sed "s/=/%20/g"
+}
+
+#################################################
+# Decodes the name of an access key.
+# Arguments:
+#   $1. The access key name to decode.
+# Outputs:
+#   Writes the decoded access key name to stdout.
+#################################################
+decode_key_name() {
+  echo "${1}" | sed "s/%20/=/g"
+}
+
+#################################################
+# Prints the given access key entry according to
+# the provided format string.
+# The formats available for substitution are:
+#   %name%  - replaced with the access key name
+#   %ip%    - replaced with the access key IP
+#   %index% - replaced with $3
+# Arguments:
+#   $1. A composite format string.
+#   $2. The access key entry to format.
+#   $3=1. The index of the given entry.
+# Outputs:
+#   Writes the formatted entry to stdout.
+#################################################
+format_key() {
+  echo "${1}" \
+    | sed "s/%name%/`extract_key_name "${2}" | sed "s/&/\\\\\\\\&/g"`/g" \
+    | sed "s/%ip%/`extract_key_ip "${2}"`/g" \
+    | sed "s/%index%/${3:-1}/g"
+}
+
+#################################################
+# Gets index of an access key using its name.
+# Arguments:
+#   $1. The name of the access key to find.
+# Outputs:
+#   Writes the found index, if any, to stdout.
+# Returns:
+#   0 if the access key was found;
+#   otherwise, a non-zero status.
+#################################################
+get_key_index() {
+  [ -f "${STORAGE_FILENAME}" ] || return 1
+
+  case "${1}" in
+    ""|*[!0-9]*) sed "s/^/${SOL}/" "${STORAGE_FILENAME}" | grep -m 1 -inF "${SOL}`encode_key_name "${1}"`=" | grep -o "^[0-9]*" ;;
+    *) [ -n "`sed "${1}q;d" "${STORAGE_FILENAME}"`" ] && echo "${1}" ;;
+  esac
+}
+
+#################################################
+# Gets an access key using its name or index.
+# Arguments:
+#   $1. The name/index of the access key to get.
+# Outputs:
+#   Writes the found key, if any, to stdout.
+# Returns:
+#   0 if the access key was found;
+#   otherwise, a non-zero status.
+#################################################
+get_key() {
+  key_index=`get_key_index "${1}"`
+  [ $? -eq 0 ] && sed "${key_index}q;d" "${STORAGE_FILENAME}"
+}
+
+#################################################
+# Adds a new access key to the storage.
+# Arguments:
+#   $1. The access key to store.
+#   $2=(ip $1). The name of the access key.
+#################################################
+add_key() {
+  is_valid_transport "${1}" || return 1
+
+  init_storage
+  new_key_name="${2:-"`extract_key_ip "${1}"`"}"
+  existing_key_index="`get_key_index "${new_key_name}"`"
+
+  if [ -n "${existing_key_index}" ]; then
+    sed -i"" "${existing_key_index} c\\`encode_key_name "${new_key_name}"`=${1}" "${STORAGE_FILENAME}"
+  else
+    echo "`encode_key_name "${new_key_name}"`=${1}" >> "${STORAGE_FILENAME}"
+  fi
+}
+
+#################################################
+# Removes the access key from the storage using
+# its name or index.
+# Arguments:
+#   $1. The name/index of the key to remove.
+# Returns:
+#   0 if the access key was removed;
+#   otherwise, a non-zero status.
+#################################################
+remove_key() {
+  existing_key_index="`get_key_index "${1}"`"
+  [ -n "${existing_key_index}" ] && sed -i"" "${existing_key_index}d" "${STORAGE_FILENAME}"
+}
+
+#################################################
+# Lists all access keys stored in the storage.
+# Arguments:
+#   $1="%index%$ %name%$ %ip%". The format to use
+#     when printing the access keys.
+# Outputs:
+#   Writes the formatted access key entries
+#   to stdout.
+#################################################
+list_keys() {
+  list_entry_pattern="${1:-"%index%${SOL}%name%${SOL}%ip%"}"
+  i=0
+
+  while IFS="" read -r key_entry || [ -n "${key_entry}" ]; do
+    i=`expr ${i} + 1`
+    format_key "${list_entry_pattern}" "${key_entry}" "${i}"
+  done < "${STORAGE_FILENAME}" | ([ -z "${1}" ] && column -s "${SOL}" -t || cat -)
+}
+
+#################################################
+# Gets the status of the current connection.
+# Arguments:
+#   None
+# Outputs:
+#   Writes the name of the relevant access key,
+#   if any, to stdout.
+# Returns:
+#   0 if there is an active connection;
+#   1 if there is no active connection;
+#   2 if the connection is temporarily suspended.
+#################################################
+get_status() {
+  init_session
+
+  current_status_code="`grep -o "^[0-9]*" "${SESSION_FILENAME}"`"
+  current_status_arg="`sed "s/^[0-9]* //" "${SESSION_FILENAME}"`"
+
+  case "${current_status_code}" in
+    0|1|2) ;;
+    *) return 1 ;;
+  esac
+
+  if [ -n "${current_status_arg}" ]; then
+    echo "${current_status_arg}"
+    return "${current_status_code}"
+  else
+    return 1
+  fi
+}
+
+#################################################
+# Disconnects from the currently active server,
+# if any. Otherwise, does nothing.
+# Arguments:
+#   $1="". A flag indicating wether a connection
+#     should only be temporarily suspended.
+#   $2="%name%". A format to use when printing
+#     the access key used to establish the
+#     connection.
+# Outputs:
+#   Writes the name of the access key used to
+#   establish the connection, if any, to stdout.
+# Returns:
+#   0 if there was an active connection;
+#   otherwise, a non-zero status.
+#################################################
+disconnect() {
+  disconnection_key="`get_key "\`get_status\`"`"
+  disconnection_status=1
+  if [ -n "${1}" ] && [ -n "${disconnection_key}" ]; then
+    disconnection_status=2
+  fi
+
+  pkill -TERM __vpn_connect
+
+  echo "${disconnection_status} `extract_key_name "${disconnection_key}"`" > "${SESSION_FILENAME}"
+  [ -n "${disconnection_key}" ] && format_key "${2:-"%name%"}" "${disconnection_key}"
+}
+
+#################################################
+# Connects to a Shadowsocks server using
+# the specified access key.
+# If no name is specified, tries to reconnect to
+# the last server, if any.
+# Arguments:
+#   $1="". The name of the access key to use.
+#   $2="%name%". A format to use when printing
+#     the access key used to establish the
+#     connection.
+# Outputs:
+#   Writes the name of the access key used to
+#   establish the connection, if any, to stdout.
+#   Otherwise, prints an error to stderr.
+# Returns:
+#   0 if the connection has been established;
+#   otherwise, a non-zero status.
+#################################################
+connect() {
+  connection_key_name="${1:-"`get_status`"}"
+  connection_key="`get_key "${connection_key_name:-1}"`"
+  if [ -z "${connection_key}" ]; then
+    error "unknown key: ${connection_key_name}"
+    return 1
+  fi
+
+  disconnect > /dev/null 2>& 1
+  __vpn_connect -transport "`extract_key_transport "${connection_key}"`" > "${LOG_FILENAME}" 2>& 1 &
+  connection_id=$!
+  sleep 1
+
+  if ps -p "${connection_id}" > /dev/null 2>& 1; then
+    echo "0 `extract_key_name "${connection_key}"`" > "${SESSION_FILENAME}"
+    format_key "${2:-"%name%"}" "${connection_key}"
+    return 0
+  else
+    error "`tail -n 1 "${LOG_FILENAME}" | sed "s/^\\[ERROR\\][ 0-9/:]*//"`"
+    return 1
+  fi
+}
+
+#################################################
+# Executes an action by its name.
+# Arguments:
+#   $1. The name of the action to execute.
+#   $2="". The first action argument.
+#   $3="". The second action argument.
+# Outputs:
+#   Writes all the relevant output to stdout.
+#   Writes all errors to stderr.
+# Returns:
+#   0 if the action was successfully executed;
+#   otherwise, a non-zero status.
+#################################################
+execute_action() {
+  case "${1}" in
+    add)
+      add_key "${2}" "${3}" || error "invalid key: ${2}"
+      ;;
+
+    remove)
+      remove_key "${2}" || error "unknown key: ${2}"
+      ;;
+
+    list)
+      list_keys "${2}"
+      ;;
+
+    connect)
+      connect "${2}" "${NOTIFICATION_BODY_CONNECTED}"
+      ;;
+
+    disconnect)
+      disconnect "${2}" "${NOTIFICATION_BODY_DISCONNECTED}"
+      ;;
+
+    toggle)
+      if get_status > /dev/null; then
+        disconnect "" "${NOTIFICATION_BODY_DISCONNECTED}"
+      else
+        connect "" "${NOTIFICATION_BODY_CONNECTED}"
+      fi
+      ;;
+
+    status)
+      current_status_name="`get_status`"
+      current_status=$?
+      current_status_key="`get_key "${current_status_name}"`"
+
+      if [ "${current_status}" -eq 0 ] && [ -n "${current_status_key}" ]; then
+        format_key "${NOTIFICATION_BODY_CONNECTED}" "${current_status_key}"
+      elif [ -n "${current_status_key}" ]; then
+        format_key "${NOTIFICATION_BODY_DISCONNECTED}" "${current_status_key}"
+      else
+        format_key "${NOTIFICATION_BODY_DISCONNECTED_UNKNOWN}" "${current_status_key}"
+      fi
+      return "${current_status}"
+      ;;
+
+    *) return 1 ;;
+  esac
+}
+
+#################################################
+# Prints a brief help message.
+# Arguments:
+#   None
+# Outputs:
+#   Writes the help message to stdout.
+#################################################
+help() {
+  echo "Usage: ${0} <command> [<args>] [<options>]"
+  echo
+  echo "Manage Shadowsocks server connections and related access keys."
+  echo
+  echo "Examples:"
+  echo "  sudo ${0} add \"ss://...\" \"Geneva\""
+  echo "  sudo ${0} connect geneva"
+  echo "  sudo ${0} disconnect"
+  echo
+  echo "Commands:"
+  echo "  add <key> [<name>]        Add a new access key"
+  echo "  remove <name | index>     Remove the designated access key"
+  echo "  list [-f <format>]        List all stored access keys"
+  echo "  connect [<name | index>]  Connect to a server"
+  echo "  disconnect [-s]           Disconnect from the current server"
+  echo "  toggle                    Toggle the current connection"
+  echo "  status                    Return the current connection status"
+  echo
+  echo "Options:"
+  echo "  -h, --help                Display this help text and exit"
+  echo "  -q, --quiet               Suppress all normal output"
+  echo "  -n, --notify              Display a notification"
+  echo "  -s, --suspend             Suspend the current connection;"
+  echo "                            It will be re-established later"
+  echo "  -f, --format <format>     Print a key according to the <format>;"
+  echo "                            The formats are: %name%, %ip%, %index%"
+}
+
+#################################################
+# Formats and prints the provided error message,
+# displays the help page, and terminates the
+# process.
+# Arguments:
+#   $1. The error message to format and print.
+# Outputs:
+#   Writes the formatted error message to stderr.
+# Returns:
+#   Never returns (exits with a status of 1).
+#################################################
+fatal_error() {
+  error "${1}"
+  help >& 2
+  exit 1
+}
+
+#################################################
+# The main entry point for the script.
+# Arguments:
+#   ... A list of the command line arguments.
+#################################################
+main() {
+  quiet=""
+  notify=""
+  suspend=""
+  format=""
+  action=""
+  arg0=""
+  arg1=""
+
+  # Parse the arguments and options.
+  while [ -n "${1}" ]; do
+    case "${1}" in
+      -h|--help) help; exit 0 ;;
+      -q|--quiet) quiet="-q" ;;
+      -n|--notify) notify="-n" ;;
+      -s|--suspend) suspend="-s" ;;
+      -f|--format) format="${2}"; shift ;;
+      -*) fatal_error "invalid option: ${1}" ;;
+      *)
+        if [ -z "${action}" ]; then
+          action="${1}"
+        elif [ -z "${arg0}" ]; then
+          arg0="${1}"
+        elif [ -z "${arg1}" ]; then
+          arg1="${1}"
+        else
+          fatal_error "invalid argument: ${1}"
+        fi
+        ;;
+    esac
+    shift 2> /dev/null
+  done
+
+  # Validate the parsed arguments and normalize the action name.
+  case "${action}" in
+    add|a)
+      action="add"
+      [ -n "${arg0}" ] || fatal_error "missing argument: <key>"
+      ;;
+
+    remove|rm|r)
+      action="remove"
+      [ -n "${arg0}" ] || fatal_error "missing argument: <name | index>"
+      ;;
+
+    list|ls|l) action="list" ;;
+
+    connect|cd|c)
+      action="connect"
+      NOTIFICATION_ICON_SUCCESS="${NOTIFICATION_ICON_CONNECTED}"
+      ;;
+
+    disconnect|exit|d)
+      action="disconnect"
+      NOTIFICATION_ICON_SUCCESS="${NOTIFICATION_ICON_DISCONNECTED}"
+      ;;
+
+    toggle|t)
+      action="toggle"
+      if get_status > /dev/null; then
+        NOTIFICATION_ICON_SUCCESS="${NOTIFICATION_ICON_DISCONNECTED}"
+      else
+        NOTIFICATION_ICON_SUCCESS="${NOTIFICATION_ICON_CONNECTED}"
+      fi
+      ;;
+
+    status|s)
+      action="status"
+      NOTIFICATION_ICON_SUCCESS="${NOTIFICATION_ICON_CONNECTED}"
+      NOTIFICATION_ICON_FAILURE="${NOTIFICATION_ICON_DISCONNECTED}"
+      ;;
+
+    *) fatal_error "invalid command: ${1}" ;;
+  esac
+
+  # Everything we do requires superuser privileges.
+  # So, there is no real reason to proceed without those.
+  assert_is_root
+
+  # Redirect the output to a variable, so we can decide how to display it later.
+  action_result="`execute_action "${action}" "${arg0:-"${format:-"${suspend}"}"}" "${arg1}" 2>& 1`"
+  action_code=$?
+
+  # Display the output.
+  # Either via a notification if the "--notify" flag has been provided, or
+  # just write it back to stdout.
+  if [ -n "${action_result}" ]; then
+    if [ -n "${notify}" ]; then
+      action_icon="`[ "${action_code}" -eq 0 ] && echo "${NOTIFICATION_ICON_SUCCESS}" || echo "${NOTIFICATION_ICON_FAILURE}"`"
+      send_notification "${NOTIFICATION_TITLE}" "${action_result}" "${action_icon}"
+    elif [ -z "${quiet}" ]; then
+      echo "${action_result}"
+    fi
+  fi
+  exit "${action_code}"
+}
+
+main "$@"
