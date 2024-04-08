@@ -312,6 +312,8 @@ remove_key() {
 #   to stdout.
 #################################################
 list_keys() {
+  init_storage
+
   list_entry_pattern="${1:-"%index%${SOL}%name%${SOL}%ip%"}"
   i=0
 
