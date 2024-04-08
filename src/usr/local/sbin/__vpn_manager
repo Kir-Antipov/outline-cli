@@ -95,7 +95,7 @@ command_exists() {
 send_notification() {
   display_id="`ls /tmp/.X11-unix/X* 2> /dev/null | head -n 1 | sed "s|/tmp/.X11-unix/X||"`"
   display=":${display_id:-0}"
-  display_user="`logname`"
+  display_user="`who | grep "(${display})\|(login screen)" | head -n 1 | sed "s/\\s.*//"`"
   display_user_id="`id -u "${display_user}" 2> /dev/null`"
 
   if command_exists notify-send; then
