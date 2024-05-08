@@ -410,7 +410,7 @@ connect() {
   fi
 
   disconnect > /dev/null 2>& 1
-  __vpn_connect -transport "`extract_key_transport "${connection_key}"`" > "${LOG_FILENAME}" 2>& 1 &
+  /usr/local/sbin/__vpn_connect -transport "`extract_key_transport "${connection_key}"`" > "${LOG_FILENAME}" 2>& 1 &
   connection_id=$!
   sleep 1
 
