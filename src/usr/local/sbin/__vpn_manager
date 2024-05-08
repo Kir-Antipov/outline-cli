@@ -355,6 +355,31 @@ get_status() {
 }
 
 #################################################
+# Terminates or forcefully kills a process
+# by its full name.
+# Arguments:
+#   $1. The name of the process to terminate.
+#   $2="0.05". The interval to wait between
+#     termination attempts (in seconds).
+#   $3="50". The maximum number of termination
+#     attempts.
+#################################################
+terminate_or_kill() {
+  # Terminate the process gracefully using SIGTERM.
+  pkill -TERM -x "${1}"
+
+  # Loop until the process is terminated or maximum attempts reached.
+  termination_attempt=0
+  while pgrep -x "${1}" > /dev/null && [ "${termination_attempt}" -lt "${3:-50}" ]; do
+    sleep "${2:-"0.05"}"
+    termination_attempt=`expr ${termination_attempt} + 1`
+  done
+
+  # If process still exists, forcefully kill it using SIGKILL.
+  pkill -KILL -x "${1}" && pidwait -x "${1}"
+}
+
+#################################################
 # Disconnects from the currently active server,
 # if any. Otherwise, does nothing.
 # Arguments:
@@ -377,7 +402,7 @@ disconnect() {
     disconnection_status=2
   fi
 
-  pkill -TERM __vpn_connect
+  terminate_or_kill __vpn_connect
 
   echo "${disconnection_status} `extract_key_name "${disconnection_key}"`" > "${SESSION_FILENAME}"
   [ -n "${disconnection_key}" ] && format_key "${2:-"%name%"}" "${disconnection_key}"
