@@ -14,7 +14,7 @@ case "${2}" in
   # connection to a Shadowsocks server, if any.
   up)
     /usr/local/sbin/__vpn_manager status -q
-    if [ $? -eq 0 -o $? -eq 2 ]; then
+    if [ $? -ne 1 ]; then
       /usr/local/sbin/__vpn_manager connect -q &
     fi
     ;;

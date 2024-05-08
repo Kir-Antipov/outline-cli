@@ -396,10 +396,13 @@ terminate_or_kill() {
 #   otherwise, a non-zero status.
 #################################################
 disconnect() {
-  disconnection_key="`get_key "\`get_status\`"`"
-  disconnection_status=1
-  if [ -n "${1}" ] && [ -n "${disconnection_key}" ]; then
+  disconnection_key_name="`get_status`"
+  disconnection_status=$?
+  disconnection_key="`get_key "${disconnection_key_name}"`"
+  if [ -n "${1}" ] && [ "${disconnection_status}" -ne 1 ]; then
     disconnection_status=2
+  else
+    disconnection_status=1
   fi
 
   terminate_or_kill __vpn_connect
