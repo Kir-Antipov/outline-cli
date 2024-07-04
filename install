@@ -497,6 +497,7 @@ uninstall() {
   rm -rf /var/lib/outline
   rm -f /var/log/outline
 
+  rm -f "/usr/share/polkit-1/actions/vpn-manager.policy"
   rm -f "/etc/NetworkManager/dispatcher.d/vpn-manager-refresh"
   rm -f "/etc/keyd/vpn-manager.conf"
 
@@ -585,6 +586,11 @@ main() {
   if [ $? -ne 0 ]; then
     uninstall
     return
+  fi
+
+  # Allow calls to __vpn_manager via pkexec.
+  if command_exists pkexec; then
+    unwrap "src/usr/share/polkit-1/actions/vpn-manager.policy" 644
   fi
 
   # NetworkManager integration.
