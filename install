@@ -499,7 +499,6 @@ uninstall() {
 
   rm -f "/usr/share/polkit-1/actions/vpn-manager.policy"
   rm -f "/etc/NetworkManager/dispatcher.d/vpn-manager-refresh"
-  rm -f "/etc/keyd/vpn-manager.conf"
 
   ip_rule_fix delete
 }
@@ -596,12 +595,6 @@ main() {
   # NetworkManager integration.
   if command_exists NetworkManager && confirm "Enable NetworkManager integration?" "y"; then
     unwrap "src/etc/NetworkManager/dispatcher.d/vpn-manager-refresh" 500
-  fi
-
-  # keyd integration.
-  if command_exists keyd && confirm "Use default keyd configuration?" "y"; then
-    unwrap "src/etc/keyd/vpn-manager.conf"
-    keyd reload
   fi
 
   # LAN fix.
