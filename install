@@ -540,6 +540,7 @@ main() {
   assert_installed git
   assert_installed tar
   assert_installed curl wget
+  assert_installed gcc clang # Go needs a C/C++ compiler.
 
   # Automatic cleanup on the process termination.
   trap cleanup EXIT
