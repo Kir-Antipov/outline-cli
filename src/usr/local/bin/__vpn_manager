@@ -568,6 +568,17 @@ execute_action() {
 }
 
 #################################################
+# Prints version information.
+# Arguments:
+#   None
+# Outputs:
+#   Writes version information to stdout.
+#################################################
+version() {
+  echo "vpn-manager 2.0.0"
+}
+
+#################################################
 # Prints a brief help message.
 # Arguments:
 #   None
@@ -595,6 +606,7 @@ help() {
   echo
   echo "Options:"
   echo "  -h, --help                Display this help text and exit"
+  echo "  -v, --version             Display version information and exit"
   echo "  -q, --quiet               Suppress all normal output"
   echo "  -n, --notify              Display a notification"
   echo "  -s, --suspend             Suspend the current connection;"
@@ -638,6 +650,7 @@ main() {
   while [ -n "${1}" ]; do
     case "${1}" in
       -h|--help) help; exit 0 ;;
+      -v|--version) version; exit 0 ;;
       -q|--quiet) quiet="-q" ;;
       -n|--notify) notify="-n" ;;
       -s|--suspend) suspend="-s" ;;
