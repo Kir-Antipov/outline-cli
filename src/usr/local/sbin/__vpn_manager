@@ -82,6 +82,25 @@ command_exists() {
 }
 
 #################################################
+# Downloads a file.
+# Arguments:
+#   $1. The URL of the file to download.
+#   $2. The destination of the downloaded file.
+#       If not provided, the file will be written
+#       to stdout.
+# Returns:
+#   0 if the operation succeeds;
+#   otherwise, a non-zero status.
+#################################################
+download() {
+  if command_exists wget; then
+    wget -O "${2:-"-"}" "${1}"
+  elif command_exists curl; then
+    curl -Lo "${2:-"-"}" "${1}"
+  fi
+}
+
+#################################################
 # Sends a desktop notification.
 # Arguments:
 #   $1. The title of the notification.
@@ -143,7 +162,7 @@ assert_is_root() {
 #   otherwise, a non-zero status.
 #################################################
 is_valid_transport() {
-  echo "${1}" | grep -q "ss://[a-zA-Z0-9+/=]*@[0-9.:]*"
+  echo "${1}" | grep -q -e "ss://[a-zA-Z0-9+/=]*@[0-9.:]*" -e "ssconf://"
 }
 
 #################################################
@@ -158,7 +177,41 @@ is_valid_transport() {
 #   otherwise, a non-zero status.
 #################################################
 extract_key_ip() {
-  echo "${1}" | grep -o "@[0-9.:]*/\\|@[0-9.:]*$" | grep -o "[0-9.:]*"
+  echo "`normalize_key "${1}"`" | grep -o "@[0-9.:]*/\\|@[0-9.:]*$" | grep -o "[0-9.:]*"
+}
+
+#################################################
+# Normalizes the given access key by converting
+# it to its actual static representation.
+# Arguments:
+#   $1. The key to normalize.
+# Outputs:
+#   Writes the normalized key to stdout.
+#################################################
+normalize_key() {
+  if echo "${1}" | grep -q "ssconf://"; then
+    ssconf2ss "${1}"
+  else
+    echo "${1}"
+  fi
+}
+
+#################################################
+# Converts a dynamic access key to its actual
+# static representation.
+# Arguments:
+#   $1. The dynamic key to convert.
+# Outputs:
+#   Writes the normalized static key to stdout.
+#################################################
+ssconf2ss() {
+  ssconf_value="`download "\`echo "${1}" | sed "s|ssconf://|https://|"\`" 2> /dev/null`"
+
+  if is_valid_transport "${ssconf_value}"; then
+    echo "${ssconf_value}"
+  else
+    echo "${ssconf_value}" | jq -r '"ss://\(.method + ":" + .password | @base64)@\(.server):\(.server_port)"'
+  fi
 }
 
 #################################################
@@ -188,7 +241,7 @@ extract_key_name() {
 #   otherwise, a non-zero status.
 #################################################
 extract_key_transport() {
-  echo "${1}" | sed "s/[^=]*=//"
+  normalize_key "`echo "${1}" | sed "s/[^=]*=//"`"
 }
 
 #################################################
@@ -230,7 +283,7 @@ decode_key_name() {
 format_key() {
   echo "${1}" \
     | sed "s/%name%/`extract_key_name "${2}" | sed "s/&/\\\\\\\\&/g"`/g" \
-    | sed "s/%ip%/`extract_key_ip "${2}"`/g" \
+    | sed "s/%ip%/`extract_key_ip "\`extract_key_transport "${2}"\`"`/g" \
     | sed "s/%index%/${3:-1}/g"
 }
 
