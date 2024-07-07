@@ -183,7 +183,7 @@ go_version_latest() {
 #   otherwise, a non-zero status.
 #################################################
 go_download() {
-  download "https://go.dev/dl/go${2:-"`go_version_latest`"}.`os_type`.tar.gz" "${1:-"go.tar.gz"}"
+  download "https://go.dev/dl/go${2:-"`go_version_latest`"}.`os_type`.tar.gz" "${1:-"go.tar.gz"}" >& 2
 }
 
 #################################################
