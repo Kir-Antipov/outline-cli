@@ -162,7 +162,7 @@ assert_is_root() {
 #   otherwise, a non-zero status.
 #################################################
 is_valid_transport() {
-  echo "${1}" | grep -q -e "ss://[a-zA-Z0-9+/=]*@[0-9.:]*" -e "ssconf://"
+  echo "${1}" | grep -q -e "^ss://" -e "^ssconf://"
 }
 
 #################################################
@@ -177,7 +177,7 @@ is_valid_transport() {
 #   otherwise, a non-zero status.
 #################################################
 extract_key_ip() {
-  echo "`normalize_key "${1}"`" | grep -o "@[0-9.:]*/\\|@[0-9.:]*$" | grep -o "[0-9.:]*"
+  echo "`normalize_key "${1}"`" | grep -oE "@.+:[0-9]{1,5}(/|$)" | grep -oE "[^@]+:[0-9]+"
 }
 
 #################################################
