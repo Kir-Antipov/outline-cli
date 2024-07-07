@@ -1,5 +1,6 @@
 # Outline CLI
 
+[![GitHub CI Status](https://img.shields.io/github/actions/workflow/status/Kir-Antipov/outline-cli/ci.yml?logo=github)](https://github.com/Kir-Antipov/outline-cli/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/github/v/release/Kir-Antipov/outline-cli?sort=date&style=flat&label=version&cacheSeconds=3600)](https://github.com/Kir-Antipov/outline-cli/releases/latest)
 [![License](https://img.shields.io/github/license/Kir-Antipov/outline-cli?style=flat&cacheSeconds=36000)](https://github.com/Kir-Antipov/outline-cli/blob/HEAD/LICENSE.md)
 
@@ -7,7 +8,7 @@
 
 [Outline](https://getoutline.org/), developed by [Jigsaw](https://jigsaw.google.com/), is a great project aimed at simplifying the task of creating self-hosted VPN servers down to a matter of seconds. However, while the server deployment with Outline is commendable, its client-side experience falls short. Currently, the primary method of connecting to an [Outline server](https://github.com/Jigsaw-Code/outline-server/) is via the [Outline Client](https://github.com/Jigsaw-Code/outline-apps/) - an Electron *(or Cordova for mobile devices)* app - which unfortunately presents lots of issues across different platforms. It is somewhat buggy on Windows, notably unreliable on macOS, and entirely non-functional on Linux *(at least if Linux means more than just Ubuntu to you)*.
 
-Fortunately, at least for Linux users, there's an alternative - a [CLI solution](https://github.com/Jigsaw-Code/outline-sdk/tree/main/x/examples/outline-cli/) hidden within the "experimental" section of the [outline-sdk](https://github.com/Jigsaw-Code/outline-sdk/) repo, which only supports Linux at the moment of writing. Despite its minimalistic design, the CLI performs its sole function - establishing a connection to a selected server and rerouting all traffic through it - quite efficiently and reliably. Essentially, it embodies the Unix philosophy in software development. However, it may not be very user-friendly to manually launch/restart it, manage your access keys, and forcibly stop it when you wish to disconnect from the VPN server, and so on. This is where this project comes in.
+Fortunately, at least for Linux users, there's an alternative - a [CLI solution](https://github.com/Jigsaw-Code/outline-sdk/tree/main/x/examples/outline-cli/) hidden within the "experimental" section of the [outline-sdk](https://github.com/Jigsaw-Code/outline-sdk/) repo, which only supports Linux at the moment of writing. Despite its minimalistic design, the CLI performs its sole function - establishing a connection to a selected server and rerouting all traffic through it - quite efficiently and reliably. However, it may not be very user-friendly to manually launch/restart it, manage your access keys, and forcibly stop it when you wish to disconnect from the VPN server, and so on. This is where this project comes in.
 
 This project, essentially a wrapper over the official [outline-cli](https://github.com/Jigsaw-Code/outline-sdk/tree/main/x/examples/outline-cli/) provided by [Jigsaw](https://github.com/Jigsaw-Code/), aims to make its usage easier. Comprised of just a few shell scripts, it enhances the default experience into a near-perfect one - unachievable by a buggy Electron app ;)
 
@@ -18,10 +19,11 @@ This project, essentially a wrapper over the official [outline-cli](https://gith
 Obviously, the official CLI provides you with the ability to connect to servers deployed by the Outline Manager, or to any Shadowsocks server, for that matter. Here is what this project offers on top of that:
 
 - Access key management
+- [`ssconf://`](https://www.reddit.com/r/outlinevpn/wiki/index/dynamic_access_keys/) support
 - Option to specify a custom DNS resolver instead of the hardcoded one
 - Ability to connect to devices on your local network while the VPN is active
 - Automatic reconnection to the VPN server upon reboot/network status change *(requires `NetworkManager`)*
-- Hotkeys to toggle the current connection status, quickly connect to a specific server, suspend the current connection, and more *(requires [`keyd`](https://github.com/rvaiya/keyd/))*
+- Easy integration with other tools, thanks to the highly scriptable nature of this project
 
 ----
 
@@ -35,20 +37,27 @@ cd outline-cli
 sudo ./install -y
 ```
 
+Alternatively, for `curl $URL | sudo bash` enjoyers, the same result can be achieved with the following one-liner:
+
+```sh
+curl -Ls https://github.com/Kir-Antipov/outline-cli/blob/master/install?raw=true | sudo bash -s -- -y
+```
+
 This will:
 
-1) Build and install the official [`outline-cli`](https://github.com/Jigsaw-Code/outline-sdk/tree/main/x/examples/outline-cli/)
+1) Install any missing dependencies: `git`, `tar`, `jq`, `curl` or `wget`, `gcc` or `clang`
+2) Build and install the official [`outline-cli`](https://github.com/Jigsaw-Code/outline-sdk/tree/main/x/examples/outline-cli/)
    1) Clone [`Jigsaw-Code/outline-sdk`](https://github.com/Jigsaw-Code/outline-sdk/)
    2) Apply a patch that allows you to specify a custom DNS resolver instead of the hardcoded one
-   3) Download the latest version of Go (locally, not globally)
+   3) Download the latest version of Go *(locally, not globally)*
    4) Build the app
-   5) Copy the resulting binary to `/usr/local/sbin/__vpn_connect`
+   5) Copy the resulting binary to `/usr/local/bin/__vpn_connect`
    6) Clean up
-2) Copy the `__vpn_manager` script to `/usr/local/sbin/__vpn_manager`
-3) Create a symlink for `__vpn_manager`, enabling you to call it using the shorthand `vpn`
-4) Copy the `vpn-manager-refresh` script to `/etc/NetworkManager/dispatcher.d/vpn-manager-refresh`, ensuring it executes each time your network connection status changes
-5) Unbork the LAN by creating two new routing rules that prevent local traffic from being redirected to your VPN server
-6) If you have [`keyd`](https://github.com/rvaiya/keyd/) installed, copy a `keyd` configuration to `/etc/keyd/vpn-manager.conf`
+3) Copy the `__vpn_manager` script to `/usr/local/bin/__vpn_manager`
+4) Create a symlink for `__vpn_manager`, enabling you to call it using the shorthand `vpn`
+5) Create a `polkit-1` policy, enabling you to call `__vpn_manager` from scripts
+6) Copy the `vpn-manager-refresh` script to `/etc/NetworkManager/dispatcher.d/vpn-manager-refresh`, ensuring it executes each time your network connection status changes
+7) Unbork the LAN by creating two new routing rules that prevent local traffic from being redirected to your VPN server
 
 If you wish to configure the process described above, you can run the installation script without the `-y` flag, allowing you to guide it and adjust the results according to your preferences.
 
@@ -77,6 +86,7 @@ Commands:
 
 Options:
   -h, --help                Display this help text and exit
+  -v, --version             Display version information and exit
   -q, --quiet               Suppress all normal output
   -n, --notify              Display a notification
   -s, --suspend             Suspend the current connection;
@@ -106,7 +116,7 @@ sudo vpn connect "Geneva"
 or one of these alternatives:
 
 ```sh
-# The access key name is case insensitive.
+# The access key name is case-insensitive.
 sudo vpn connect geneva
 
 # You can also use the saved access key's ID
@@ -114,7 +124,7 @@ sudo vpn connect geneva
 sudo vpn connect 1
 
 # You can also omit the name/ID entirely.
-# You will then connect to the last server you connected to.
+# This will connect you to the last server you connected to.
 sudo vpn connect
 ```
 
@@ -130,25 +140,31 @@ And that about covers the most essential functionalities you'll need.
 
 ----
 
-## Hotkeys
+## Keyboard Shortcuts
 
-If you have [`keyd`](https://github.com/rvaiya/keyd/) installed and followed the standard installation script, you now have the following global hotkeys available:
+While this project doesn't provide a built-in solution for automatically creating keyboard shortcuts *(since everyone does it differently, and there's no point in even attempting to support every DE/WM/key remapping tool in existence)*, it is designed to be easily integrated with other tools and is highly scriptable.
 
-| Hotkey | Description |
-|:-------|:------------|
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd>                | Toggle the current connection                           |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>-</kbd> | Disconnect from the current server                      |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>=</kbd> | Connect to a server you were last connected to          |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>0</kbd> | Show the current connection status                      |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>1</kbd> | Connect to a server using the 1<sup>st</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>2</kbd> | Connect to a server using the 2<sup>nd</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>3</kbd> | Connect to a server using the 3<sup>rd</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>4</kbd> | Connect to a server using the 4<sup>th</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>5</kbd> | Connect to a server using the 5<sup>th</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>6</kbd> | Connect to a server using the 6<sup>th</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>7</kbd> | Connect to a server using the 7<sup>th</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>8</kbd> | Connect to a server using the 8<sup>th</sup> access key |
-| <kbd>Ctrl</kbd> + <kbd>Super</kbd> + <kbd>v</kbd> + <kbd>9</kbd> | Connect to a server using the 9<sup>th</sup> access key |
+Here’s a table with some common actions you might want to perform and the commands that achieve the desired results:
+
+| Description                                             | Command                                             |
+|:--------------------------------------------------------|:----------------------------------------------------|
+| Toggle the current connection                           | `pkexec /usr/local/bin/__vpn_manager toggle -n`     |
+| Disconnect from the current server                      | `pkexec /usr/local/bin/__vpn_manager disconnect -n` |
+| Connect to the server you were last connected to        | `pkexec /usr/local/bin/__vpn_manager connect -n`    |
+| Show the current connection status                      | `pkexec /usr/local/bin/__vpn_manager status -n`     |
+| Connect to a server using the 1<sup>st</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 1 -n`  |
+| Connect to a server using the 2<sup>nd</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 2 -n`  |
+| Connect to a server using the 3<sup>rd</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 3 -n`  |
+| Connect to a server using the 4<sup>th</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 4 -n`  |
+| Connect to a server using the 5<sup>th</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 5 -n`  |
+| Connect to a server using the 6<sup>th</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 6 -n`  |
+| Connect to a server using the 7<sup>th</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 7 -n`  |
+| Connect to a server using the 8<sup>th</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 8 -n`  |
+| Connect to a server using the 9<sup>th</sup> access key | `pkexec /usr/local/bin/__vpn_manager connect 9 -n`  |
+
+With this, you can easily configure keyboard shortcuts either directly via the keyboard settings provided by your DE/WM *(e.g., KDE, GNOME, etc.)*, or via a key remapping tool of your choice.
+
+For example, I use [`keyd`](https://github.com/rvaiya/keyd/) - a very nice, modular, and efficient key remapping daemon. You can check my config, which implements all the shortcuts mentioned above, here: [`src/etc/keyd/vpn-manager.conf`](src/etc/keyd/vpn-manager.conf).
 
 ----
 
@@ -181,4 +197,4 @@ This notice serves as a disclaimer. Any violations of Jigsaw's policies or trade
 
 ## License
 
-Licensed under the terms of the [MIT License](https://github.com/Kir-Antipov/outline-cli/blob/HEAD/LICENSE.md).
+Licensed under the terms of the [MIT License](LICENSE.md).
