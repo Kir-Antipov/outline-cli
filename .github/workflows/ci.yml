@@ -1,0 +1,30 @@
+name: ci
+
+on: [ push, pull_request, workflow_dispatch ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install `outline-cli`
+        run: sudo ./install -y
+
+      - name: Ensure `outline-cli` is accessible
+        run: |
+          sudo vpn --help && \
+          sudo vpn ls && \
+          sudo vpn add "ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTo1UkVmeFRqbHR6Mkw@outline-server.example.com:17178" && \
+          sudo vpn ls && \
+          sudo vpn add "ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTo1UkVmeFRqbHR6Mkw@127.0.0.1:8000" localhost && \
+          sudo vpn ls && \
+          sudo vpn rm 1 && \
+          sudo vpn ls
+
+      - name: Uninstall `outline-cli`
+        run: sudo ./uninstall
+
+      - name: Ensure `outline-cli` is no longer accessible
+        run: ! sudo vpn --help
