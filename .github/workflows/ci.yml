@@ -27,4 +27,4 @@ jobs:
         run: sudo ./uninstall
 
       - name: Ensure `outline-cli` is no longer accessible
-        run: ! sudo vpn --help
+        run: "! sudo vpn --help"
