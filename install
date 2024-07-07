@@ -459,8 +459,8 @@ help() {
   echo
   echo "Options:"
   echo "  -h, --help  Display this help text and exit"
-  echo "  -y, --yes   Run the script without manual intervention."
-  echo "  -u, --undo  Undo the changes made by this script."
+  echo "  -y, --yes   Run the script without manual intervention"
+  echo "  -u, --undo  Undo the changes made by this script"
 }
 
 #################################################
