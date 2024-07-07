@@ -102,6 +102,29 @@ prompt() {
 }
 
 #################################################
+# Installs the specified package(s) using the
+# appropriate package manager for the system.
+# Arguments:
+#   ... One or more package names to install.
+# Returns:
+#   0 if the operation succeeds;
+#   otherwise, a non-zero status if no supported
+#   package manager is found or the installation
+#   fails.
+#################################################
+install_package() {
+  if command_exists apt-get; then
+    apt-get install -y "$@"
+  elif command_exists dnf; then
+    dnf install -y "$@"
+  elif command_exists pacman; then
+    pacman -S --noconfirm "$@"
+  else
+    return 1
+  fi
+}
+
+#################################################
 # Gets the operating system name.
 # Arguments:
 #   None
@@ -436,6 +459,10 @@ assert_installed() {
   for cmd_name in "$@"; do
     command_exists "${cmd_name}" && return
   done
+
+  if confirm "Do you want to install the missing dependency '${1}'?" "y"; then
+    install_package "${1}" && return
+  fi
 
   error "cannot perform the installation: ${1} is not installed"
   exit 1
