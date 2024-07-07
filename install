@@ -186,11 +186,7 @@ download() {
 #   otherwise, a non-zero status.
 #################################################
 go_version_latest() {
-  if command_exists jq; then
-    download https://go.dev/dl/?mode=json | jq -r ".[0].version" | grep -o "[0-9\.]*"
-  else
-    download https://go.dev/dl/?mode=json | grep "version" | grep -o "[0-9\.]*" | head -n 1
-  fi 2> /dev/null
+  download "https://go.dev/dl/?mode=json" | jq -r ".[0].version" | grep -o "[0-9\.]*" 2> /dev/null
 }
 
 #################################################
@@ -567,6 +563,7 @@ main() {
   # Ensure that prerequisites for the script are met.
   assert_is_root
   assert_valid_cwd
+  assert_installed jq
   assert_installed git
   assert_installed tar
   assert_installed curl wget
