@@ -3,6 +3,11 @@
 # Install the Outline Client CLI.
 
 #################################################
+# The URL of the repo that contains this file.
+#################################################
+REPO="https://github.com/Kir-Antipov/outline-cli"
+
+#################################################
 # The priority assigned to the routing rules
 # created by this script.
 # As the Outline Client uses the value of 23333,
@@ -548,11 +553,11 @@ cleanup() {
 }
 
 #################################################
-# The main entry point for the script.
+# The main local entry point for the script.
 # Arguments:
 #   ... A list of the command line arguments.
 #################################################
-main() {
+main_local() {
   # Parse the arguments and options.
   while [ -n "${1}" ]; do
     case "${1}" in
@@ -636,6 +641,50 @@ main() {
   # LAN fix.
   if confirm "Enable LAN access while the VPN connection is active?" "y"; then
     ip_rule_fix
+  fi
+}
+
+#################################################
+# The main remote entry point for the script.
+# Arguments:
+#   ... A list of the command line arguments.
+#################################################
+main_remote() {
+  # Ensure that prerequisites for the script are met.
+  assert_is_root
+  assert_installed git
+
+  # Clone the latest available tag and cd into it.
+  git clone "${REPO}" --depth 1 --branch \
+    "`git ls-remote --tags --sort="-v:refname" "${REPO}" | head -n 1 | cut -d/ -f3`" && \
+    [ -n "`basename "${REPO}"`" ] && \
+    [ -f "./`basename "${REPO}"`/install" ] && \
+    cd "./`basename "${REPO}"`" || \
+    return
+
+  # Perform the installation.
+  ./install "$@" <& 1
+
+  # Delete the cloned repo.
+  rm -rf -- "../`basename "${REPO}"`"
+}
+
+#################################################
+# The main entry point for the script.
+# Arguments:
+#   ... A list of the command line arguments.
+#################################################
+main() {
+  if [ "`basename "${0}"`" = "install" ]; then
+    # The script is being executed from a local file,
+    # i.e., the repository has already been cloned.
+    # Proceed to the main entry point.
+    main_local "$@"
+  else
+    # The script has been piped into whatever is executing it now.
+    # Proceed to the stub that will clone the repository and
+    # run the script properly.
+    main_remote "$@"
   fi
 }
 
