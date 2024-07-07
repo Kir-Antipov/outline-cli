@@ -512,7 +512,8 @@ fatal_error() {
 # the files and directories it may have created,
 # and undoing the network routing rule changes.
 # Arguments:
-#   None
+#   $1=false. Indicates whether to also remove
+#             local user data.
 #################################################
 uninstall() {
   assert_is_root
@@ -521,13 +522,15 @@ uninstall() {
   rm "/usr/local/sbin/__vpn_manager"
   find "/usr/local/sbin/" -lname "/usr/local/sbin/__vpn_manager" -delete
 
-  rm -rf /var/lib/outline
-  rm -f /var/log/outline
-
   rm -f "/usr/share/polkit-1/actions/vpn-manager.policy"
   rm -f "/etc/NetworkManager/dispatcher.d/vpn-manager-refresh"
 
   ip_rule_fix delete
+
+  if [ "${1}" = "true" ]; then
+    rm -rf "/var/lib/outline"
+    rm -f "/var/log/outline"
+  fi
 }
 
 #################################################
@@ -554,7 +557,7 @@ main() {
     case "${1}" in
       -h|--help) help; exit 0 ;;
       -y|--yes) USE_DEFAULT_RESPONSE=true ;;
-      -u|--undo|--uninstall) uninstall; exit 0 ;;
+      -u|--undo|--uninstall) uninstall true; exit 0 ;;
       -*) fatal_error "invalid option: ${1}" ;;
       *) fatal_error "invalid argument: ${1}" ;;
     esac
@@ -568,6 +571,9 @@ main() {
   assert_installed tar
   assert_installed curl wget
   assert_installed gcc clang # Go needs a C/C++ compiler.
+
+  # Clean up stuff from the previous installations.
+  uninstall > /dev/null 2>& 1
 
   # Automatic cleanup on the process termination.
   trap cleanup EXIT
