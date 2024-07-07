@@ -16,7 +16,7 @@
       <allow_active>yes</allow_active>
       <allow_inactive>yes</allow_inactive>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/sbin/__vpn_manager</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/__vpn_manager</annotate>
   </action>
 
 </policyconfig>

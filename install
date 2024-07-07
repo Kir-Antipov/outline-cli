@@ -514,9 +514,14 @@ fatal_error() {
 uninstall() {
   assert_is_root
 
+  # Previously, executables were located in `sbin` instead of `bin`.
   rm "/usr/local/sbin/__vpn_connect"
   rm "/usr/local/sbin/__vpn_manager"
   find "/usr/local/sbin/" -lname "/usr/local/sbin/__vpn_manager" -delete
+
+  rm "/usr/local/bin/__vpn_connect"
+  rm "/usr/local/bin/__vpn_manager"
+  find "/usr/local/bin/" -lname "/usr/local/bin/__vpn_manager" -delete
 
   rm -f "/usr/share/polkit-1/actions/vpn-manager.policy"
   rm -f "/etc/NetworkManager/dispatcher.d/vpn-manager-refresh"
@@ -538,7 +543,7 @@ uninstall() {
 #   None
 #################################################
 cleanup() {
-  git checkout -- "src/usr/local/sbin/__vpn_connect"
+  git checkout -- "src/usr/local/bin/__vpn_connect"
   rm -rf .go
 }
 
@@ -591,9 +596,9 @@ main() {
     fi
 
     if confirm "Apply patches from the 'patches/' directory?" "y"; then
-      outline_install "src/usr/local/sbin/__vpn_connect" "${outline_go_binary}" patches/* || return
+      outline_install "src/usr/local/bin/__vpn_connect" "${outline_go_binary}" patches/* || return
     else
-      outline_install "src/usr/local/sbin/__vpn_connect" "${outline_go_binary}" || return
+      outline_install "src/usr/local/bin/__vpn_connect" "${outline_go_binary}" || return
     fi
   else
     outline_wrapper_cmd="`prompt "Enter a command used to connect to a VPN server"`"
@@ -602,7 +607,7 @@ main() {
       return
     fi
 
-    outline_wrapper_install "src/usr/local/sbin/__vpn_connect" "${outline_wrapper_cmd}" || return
+    outline_wrapper_install "src/usr/local/bin/__vpn_connect" "${outline_wrapper_cmd}" || return
   fi
 
   # Prompt for a name to symlink the __vpn_manager command.
@@ -610,9 +615,9 @@ main() {
 
   # Unwrap the __vpn_connect and __vpn_manager commands, and
   # create a symlink for __vpn_manager with the user-specified name.
-  unwrap "src/usr/local/sbin/__vpn_connect" 500 && \
-  unwrap "src/usr/local/sbin/__vpn_manager" 500 && \
-  ln -s "/usr/local/sbin/__vpn_manager" "/usr/local/sbin/${vpn_manager_symlink_name:-"${DEFAULT_VPN_MANAGER_NAME}"}"
+  unwrap "src/usr/local/bin/__vpn_connect" 500 && \
+  unwrap "src/usr/local/bin/__vpn_manager" 500 && \
+  ln -s "/usr/local/bin/__vpn_manager" "/usr/local/bin/${vpn_manager_symlink_name:-"${DEFAULT_VPN_MANAGER_NAME}"}"
   if [ $? -ne 0 ]; then
     uninstall
     return

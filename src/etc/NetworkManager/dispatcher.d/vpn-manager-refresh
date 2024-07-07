@@ -13,9 +13,9 @@ case "${2}" in
   # If the network went up, resume a suspended
   # connection to a Shadowsocks server, if any.
   up)
-    /usr/local/sbin/__vpn_manager status -q
+    /usr/local/bin/__vpn_manager status -q
     if [ $? -ne 1 ]; then
-      /usr/local/sbin/__vpn_manager connect -q &
+      /usr/local/bin/__vpn_manager connect -q &
     fi
     ;;
 
@@ -23,7 +23,7 @@ case "${2}" in
   # to a Shadowsocks server, if any, to prevent
   # the system from reporting an interface with
   # no internet access.
-  down) /usr/local/sbin/__vpn_manager disconnect -s -q & ;;
+  down) /usr/local/bin/__vpn_manager disconnect -s -q & ;;
 esac
 
 # Always return a success status code
