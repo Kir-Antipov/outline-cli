@@ -153,6 +153,60 @@ assert_is_root() {
 }
 
 #################################################
+# Checks if the given string is a valid
+# Shadowsocks URI.
+# Arguments:
+#   $1. The string to check.
+# Returns:
+#   0 if the string is a valid Shadowsocks URI;
+#   otherwise, a non-zero status.
+#################################################
+is_ss() {
+  echo "${1}" | grep -qE "^ss://[a-zA-Z0-9+/]+={0,3}@.+:[0-9]{1,5}(/.*)?(#.*)?$"
+}
+
+#################################################
+# Checks if the given string is a valid
+# base64-encoded Shadowsocks URI.
+# Arguments:
+#   $1. The string to check.
+# Returns:
+#   0 if the given string is a valid
+#   base64-encoded Shadowsocks URI;
+#   otherwise, a non-zero status.
+#################################################
+is_ss64() {
+  echo "${1}" | grep -qE "^ss://[a-zA-Z0-9+/]+={0,3}(/.*)?(#.*)?$"
+}
+
+#################################################
+# Checks if the given string is a valid
+# Shadowsocks configuration URI.
+# Arguments:
+#   $1. The string to check.
+# Returns:
+#   0 if the given string is a valid
+#   Shadowsocks configuration URI;
+#   otherwise, a non-zero status.
+#################################################
+is_ssconf() {
+  echo "${1}" | grep -qE "^ssconf://.+"
+}
+
+#################################################
+# Checks if the given string is a valid JSON
+# object.
+# Arguments:
+#   $1. The string to check.
+# Returns:
+#   0 if the given string is a valid JSON object;
+#   otherwise, a non-zero status.
+#################################################
+is_json() {
+  echo "${1}" | grep -qE "^\s*{"
+}
+
+#################################################
 # Checks if the given string is a valid transport
 # (i.e., the server access key).
 # Arguments:
@@ -162,7 +216,7 @@ assert_is_root() {
 #   otherwise, a non-zero status.
 #################################################
 is_valid_transport() {
-  echo "${1}" | grep -q -e "^ss://" -e "^ssconf://"
+  is_ss "${1}" || is_ss64 "${1}" || is_ssconf "${1}"
 }
 
 #################################################
@@ -177,7 +231,7 @@ is_valid_transport() {
 #   otherwise, a non-zero status.
 #################################################
 extract_key_ip() {
-  echo "`normalize_key "${1}"`" | grep -oE "@.+:[0-9]{1,5}(/|$)" | grep -oE "[^@]+:[0-9]+"
+  echo "`normalize_key "${1}"`" | grep -oE "@.+:[0-9]{1,5}(/|#|$)" | grep -oE "[^@]+:[0-9]+"
 }
 
 #################################################
@@ -189,11 +243,29 @@ extract_key_ip() {
 #   Writes the normalized key to stdout.
 #################################################
 normalize_key() {
-  if echo "${1}" | grep -q "ssconf://"; then
+  if is_ss "${1}"; then
+    echo "${1}"
+  elif is_ss64 "${1}"; then
+    ss642ss "${1}"
+  elif is_ssconf "${1}"; then
     ssconf2ss "${1}"
+  elif is_json "${1}"; then
+    json2ss "${1}"
   else
     echo "${1}"
   fi
+}
+
+#################################################
+# Converts an encoded Shadowsocks URI to its
+# standard Shadowsocks URI format.
+# Arguments:
+#   $1. The encoded Shadowsocks URI.
+# Outputs:
+#   Writes the Shadowsocks URI to stdout.
+#################################################
+ss642ss() {
+  echo "${1}" | jq -Rr 'sub("ss://";"")|split("#")|(.[0]|=(@base64d|sub("\\s";"")|split(":|@";null))|flatten)|"ss://\("\(.[0]):\(.[1])"|@base64)@\(.[2]):\(.[3])\([.[4]]|map(select(.)|"#\(.)")[0]//"")"'
 }
 
 #################################################
@@ -205,13 +277,20 @@ normalize_key() {
 #   Writes the normalized static key to stdout.
 #################################################
 ssconf2ss() {
-  ssconf_value="`download "\`echo "${1}" | sed "s|ssconf://|https://|"\`" 2> /dev/null`"
+  normalize_key "`download "\`echo "${1}" | sed "s|ssconf://|https://|"\`" 2> /dev/null`"
+}
 
-  if is_valid_transport "${ssconf_value}"; then
-    echo "${ssconf_value}"
-  else
-    echo "${ssconf_value}" | jq -r '"ss://\(.method + ":" + .password | @base64)@\(.server):\(.server_port)"'
-  fi
+#################################################
+# Converts a JSON representation of a Shadowsocks
+# configuration to its URI format.
+# Arguments:
+#   $1. The JSON string representing
+#       the Shadowsocks configuration.
+# Outputs:
+#   Writes the Shadowsocks URI to stdout.
+#################################################
+json2ss() {
+  echo "${1}" | jq -r '"ss://\("\(.method):\(.password)"|@base64)@\(.server):\(.server_port)\([.prefix]|map(select(.)|"#\(@uri)")[0]//"")"'
 }
 
 #################################################
