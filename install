@@ -520,12 +520,12 @@ uninstall() {
   assert_is_root
 
   # Previously, executables were located in `sbin` instead of `bin`.
-  rm "/usr/local/sbin/__vpn_connect"
-  rm "/usr/local/sbin/__vpn_manager"
+  rm -f "/usr/local/sbin/__vpn_connect"
+  rm -f "/usr/local/sbin/__vpn_manager"
   find "/usr/local/sbin/" -lname "/usr/local/sbin/__vpn_manager" -delete
 
-  rm "/usr/local/bin/__vpn_connect"
-  rm "/usr/local/bin/__vpn_manager"
+  rm -f "/usr/local/bin/__vpn_connect"
+  rm -f "/usr/local/bin/__vpn_manager"
   find "/usr/local/bin/" -lname "/usr/local/bin/__vpn_manager" -delete
 
   rm -f "/usr/share/polkit-1/actions/vpn-manager.policy"
