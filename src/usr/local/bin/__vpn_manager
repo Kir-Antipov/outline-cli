@@ -101,6 +101,19 @@ download() {
 }
 
 #################################################
+# Decodes a percent-encoded URI component.
+# Arguments:
+#   None
+# Inputs:
+#   Reads the encoded URI component from stdin.
+# Outputs:
+#   Writes the decoded string to stdout.
+#################################################
+urid() {
+  printf "%b" "`sed -E 's/%([a-fA-F0-9]{2})/\\\\x\\1/g'`"
+}
+
+#################################################
 # Sends a desktop notification.
 # Arguments:
 #   $1. The title of the notification.
@@ -294,6 +307,22 @@ json2ss() {
 }
 
 #################################################
+# Extracts the default name of the given key.
+# Arguments:
+#   $1. The key to extract the default name from.
+# Outputs:
+#   Writes the extracted key name to stdout.
+#################################################
+extract_default_key_name() {
+  normalized_key="`normalize_key "${1}"`"
+  if echo "${normalized_key}" | grep -qF "#"; then
+    echo "${normalized_key}" | sed "s/[^#]*#//" | urid
+  else
+    extract_key_ip "${normalized_key}"
+  fi
+}
+
+#################################################
 # Extracts the name of the access key from
 # the given key entry.
 # Arguments:
@@ -410,7 +439,7 @@ add_key() {
   is_valid_transport "${1}" || return 1
 
   init_storage
-  new_key_name="${2:-"`extract_key_ip "${1}"`"}"
+  new_key_name="${2:-"`extract_default_key_name "${1}"`"}"
   existing_key_index="`get_key_index "${new_key_name}"`"
 
   if [ -n "${existing_key_index}" ]; then
