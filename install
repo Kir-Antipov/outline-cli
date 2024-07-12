@@ -553,23 +553,14 @@ cleanup() {
 }
 
 #################################################
-# The main local entry point for the script.
+# Installs the current version of Outline CLI.
 # Arguments:
-#   ... A list of the command line arguments.
+#   None
+# Returns:
+#   0 if the operation succeeds;
+#   otherwise, a non-zero status.
 #################################################
-main_local() {
-  # Parse the arguments and options.
-  while [ -n "${1}" ]; do
-    case "${1}" in
-      -h|--help) help; exit 0 ;;
-      -y|--yes) USE_DEFAULT_RESPONSE=true ;;
-      -u|--undo|--uninstall) uninstall true; exit 0 ;;
-      -*) fatal_error "invalid option: ${1}" ;;
-      *) fatal_error "invalid argument: ${1}" ;;
-    esac
-    shift 2> /dev/null
-  done
-
+install_local() {
   # Ensure that prerequisites for the script are met.
   assert_is_root
   assert_valid_cwd
@@ -645,11 +636,14 @@ main_local() {
 }
 
 #################################################
-# The main remote entry point for the script.
+# Installs the latest version of Outline CLI.
 # Arguments:
-#   ... A list of the command line arguments.
+#   None
+# Returns:
+#   0 if the operation succeeds;
+#   otherwise, a non-zero status.
 #################################################
-main_remote() {
+install_remote() {
   # Ensure that prerequisites for the script are met.
   assert_is_root
   assert_installed git
@@ -662,8 +656,14 @@ main_remote() {
     cd "./`basename "${REPO}"`" || \
     return
 
+  # Rebuild the arguments.
+  inline_args=""
+  if [ "${USE_DEFAULT_RESPONSE}" = "true" ]; then
+    inline_args="${inline_args} -y"
+  fi
+
   # Perform the installation.
-  ./install "$@" <& 1
+  ./install ${inline_args}
 
   # Delete the cloned repo.
   rm -rf -- "../`basename "${REPO}"`"
@@ -673,18 +673,33 @@ main_remote() {
 # The main entry point for the script.
 # Arguments:
 #   ... A list of the command line arguments.
+# Returns:
+#   0 if the operation succeeds;
+#   otherwise, a non-zero status.
 #################################################
 main() {
+  # Parse the arguments and options.
+  while [ -n "${1}" ]; do
+    case "${1}" in
+      -h|--help) help; exit 0 ;;
+      -y|--yes) USE_DEFAULT_RESPONSE=true ;;
+      -u|--undo|--uninstall) uninstall true; exit 0 ;;
+      -*) fatal_error "invalid option: ${1}" ;;
+      *) fatal_error "invalid argument: ${1}" ;;
+    esac
+    shift 2> /dev/null
+  done
+
   if [ "`basename "${0}"`" = "install" ]; then
     # The script is being executed from a local file,
     # i.e., the repository has already been cloned.
     # Proceed to the main entry point.
-    main_local "$@"
+    install_local
   else
     # The script has been piped into whatever is executing it now.
     # Proceed to the stub that will clone the repository and
     # run the script properly.
-    main_remote "$@"
+    install_remote <& 1
   fi
 }
 
