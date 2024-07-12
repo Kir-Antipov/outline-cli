@@ -683,7 +683,7 @@ execute_action() {
 #   Writes version information to stdout.
 #################################################
 version() {
-  echo "vpn-manager 2.0.0"
+  echo "vpn-manager 2.1.0"
 }
 
 #################################################
