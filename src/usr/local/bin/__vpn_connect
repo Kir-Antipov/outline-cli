@@ -72,7 +72,7 @@ fatal_error() {
 #   ... A list of the command line arguments.
 #################################################
 main() {
-  transport=""
+  local transport=""
 
   # Parse the arguments and options.
   while [ -n "${1}" ]; do
@@ -89,4 +89,4 @@ main() {
 }
 
 trap disconnect HUP INT QUIT TERM
-main "$@"
+main "${@}"

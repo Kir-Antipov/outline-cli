@@ -2,4 +2,4 @@
 #
 # Uninstall the Outline Client CLI.
 
-./install -u
+./install.sh -u

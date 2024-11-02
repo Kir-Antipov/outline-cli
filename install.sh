@@ -69,13 +69,13 @@ command_exists() {
 #   1 if the user denied the action.
 #################################################
 confirm() {
-  confirm_response="${2}"
+  local confirm_response="${2}"
   if [ -z "${confirm_response}" ] || [ "${USE_DEFAULT_RESPONSE}" != "true" ]; then
     echo -n "${1} [Y/n]: " >& 2
     read -r confirm_response
   fi
 
-  case "`echo "${confirm_response}" | tr "[:upper:]" "[:lower:]"`" in
+  case "$(echo "${confirm_response}" | tr '[:upper:]' '[:lower:]')" in
     y|yes|yep) return 0 ;;
     n|no|nope) return 1 ;;
     *) confirm "${1}" ;;
@@ -96,7 +96,7 @@ confirm() {
 #   0 if the response is not empty; otherwise, 1.
 #################################################
 prompt() {
-  prompt_response="${2}"
+  local prompt_response="${2}"
   if [ -z "${prompt_response}" ] || [ "${USE_DEFAULT_RESPONSE}" != "true" ]; then
     echo -n "${1}: " >& 2
     read -r prompt_response
@@ -119,11 +119,11 @@ prompt() {
 #################################################
 install_package() {
   if command_exists apt-get; then
-    apt-get install -y "$@"
+    apt-get install -y "${@}"
   elif command_exists dnf; then
-    dnf install -y "$@"
+    dnf install -y "${@}"
   elif command_exists pacman; then
-    pacman -S --noconfirm "$@"
+    pacman -S --noconfirm "${@}"
   else
     return 1
   fi
@@ -137,7 +137,7 @@ install_package() {
 #   Writes the name of the OS to stdout.
 #################################################
 os_name() {
-  uname -s | tr "[:upper:]" "[:lower:]"
+  uname -s | tr '[:upper:]' '[:lower:]'
 }
 
 #################################################
@@ -151,12 +151,12 @@ os_name() {
 #   "darwin-arm64", etc.
 #################################################
 os_type() {
-  case "`uname -m`" in
-    x86_64) echo "`os_name`-amd64" ;;
-    aarch64|armv8) echo "`os_name`-arm64" ;;
-    armv6|armv7l) echo "`os_name`-armv6l" ;;
-    i686|.*386.*) echo "`os_name`-386" ;;
-    *) echo "`os_name`-`uname -m`" ;;
+  case "$(uname -m)" in
+    x86_64) echo "$(os_name)-amd64" ;;
+    aarch64|armv8) echo "$(os_name)-arm64" ;;
+    armv6|armv7l) echo "$(os_name)-armv6l" ;;
+    i686|.*386.*) echo "$(os_name)-386" ;;
+    *) echo "$(os_name)-$(uname -m)" ;;
   esac
 }
 
@@ -191,7 +191,7 @@ download() {
 #   otherwise, a non-zero status.
 #################################################
 go_version_latest() {
-  download "https://go.dev/dl/?mode=json" | jq -r ".[0].version" | grep -o "[0-9\.]*" 2> /dev/null
+  download "https://go.dev/dl/?mode=json" | jq -r '.[0].version' | grep -o '[0-9\.]*' 2> /dev/null
 }
 
 #################################################
@@ -207,7 +207,7 @@ go_version_latest() {
 #   otherwise, a non-zero status.
 #################################################
 go_download() {
-  download "https://go.dev/dl/go${2:-"`go_version_latest`"}.`os_type`.tar.gz" "${1:-"go.tar.gz"}" >& 2
+  download "https://go.dev/dl/go${2:-"$(go_version_latest)"}.$(os_type).tar.gz" "${1:-"go.tar.gz"}" >& 2
 }
 
 #################################################
@@ -226,11 +226,11 @@ go_download() {
 #   otherwise, a non-zero status.
 #################################################
 go_install() {
-  go_cwd="`pwd -P`"
-  go_path="${1:-".go"}"
-  go_tmp="go@${2:-"latest"}.tmp$$.tar.gz"
+  local go_cwd="${PWD}"
+  local go_path="${1:-".go"}"
+  local go_tmp="go@${2:-"latest"}.tmp${$}.tar.gz"
 
-  if [ -d "${go_path}" ] && [ -n "`ls -A "${go_path}"`" ]; then
+  if [ -d "${go_path}" ] && [ -n "$(ls -A "${go_path}")" ]; then
     error "failed to install Go: Already installed"
     return 1
   fi
@@ -252,7 +252,7 @@ go_install() {
   rm "${go_tmp}"
 
   cd "${go_path}"
-  echo "`pwd -P`/bin/go"
+  echo "${PWD}/bin/go"
   cd "${go_cwd}"
 }
 
@@ -271,8 +271,8 @@ go_install() {
 #   otherwise, a non-zero status.
 #################################################
 outline_install() {
-  go_build_output="${1:-"outline"}"
-  go_binary="${2:-"go"}"
+  local go_build_output="${1:-"outline"}"
+  local go_binary="${2:-"go"}"
   shift 2
 
   git clone "https://github.com/Jigsaw-Code/outline-sdk" && \
@@ -288,9 +288,9 @@ outline_install() {
     shift
   done
 
+  local go_cache="${PWD}/.cache/go"
+  local go_build_status=0
   echo "Building 'outline-cli' as '${go_build_output}'..." >& 2
-  go_cache="`pwd -P`/.cache/go"
-  go_build_status=0
   GOPATH="${go_cache}" GOCACHE="${go_cache}" "${go_binary}" build -o "outline-cli" "./outline-cli" >& 2
   go_build_status=$?
   cd "../../../"
@@ -324,7 +324,7 @@ outline_install() {
 #   otherwise, a non-zero status.
 #################################################
 outline_wrapper_install() {
-  template_line_number="`sed -n "/# CONNECT_TEMPLATE/=" "${1}" 2> /dev/null`"
+  local template_line_number="$(sed -n '/# CONNECT_TEMPLATE/=' "${1}" 2> /dev/null)"
 
   [ -n "${template_line_number}" ] && \
   sed -i"" "${template_line_number} c\  ${2:-"__outline -transport \"\${1}\""} &" "${1}"
@@ -340,7 +340,7 @@ outline_wrapper_install() {
 #   The value can be either "main" or "default".
 #################################################
 ip_rule_main_table() {
-  if [ -n "`ip rule show table main 2> /dev/null`" ]; then
+  if [ -n "$(ip rule show table main 2> /dev/null)" ]; then
     echo "main"
   else
     echo "default"
@@ -361,8 +361,8 @@ ip_rule_main_table() {
 #   otherwise, a non-zero status.
 #################################################
 ip_rule_fix() {
-  ip rule "${1:-"add"}" from all to "192.168.0.0/16" table "`ip_rule_main_table`" priority "${IP_RULE_PRIORITY}"
-  ip rule "${1:-"add"}" from all to  "172.16.0.0/12" table "`ip_rule_main_table`" priority "${IP_RULE_PRIORITY}"
+  ip rule "${1:-"add"}" from all to "192.168.0.0/16" table "$(ip_rule_main_table)" priority "${IP_RULE_PRIORITY}"
+  ip rule "${1:-"add"}" from all to  "172.16.0.0/12" table "$(ip_rule_main_table)" priority "${IP_RULE_PRIORITY}"
   # Outline uses 10.0.0.0/8, so let's avoid interfering with that. It's unlikely anyone will need it anyways.
 }
 
@@ -379,7 +379,7 @@ ip_rule_fix() {
 #   otherwise, a non-zero status.
 #################################################
 cpmod() {
-  mkdir -m=${3} -p "`dirname "${2}"`"
+  mkdir -m=${3} -p "$(dirname "${2}")"
   cp "${1}" "${2}" && chmod "${3}" "${2}"
 }
 
@@ -400,7 +400,7 @@ cpmod() {
 #   otherwise, a non-zero status.
 #################################################
 unwrap() {
-  cpmod "${1}" "`echo "${1}" | sed "s/^[^/]*//"`" "${2:-600}"
+  cpmod "${1}" "$(echo "${1}" | sed 's/^[^/]*//')" "${2:-600}"
 }
 
 #################################################
@@ -417,7 +417,7 @@ unwrap() {
 #   with a status of 1).
 #################################################
 assert_is_root() {
-  [ "${EUID:-"`id -u`"}" -eq 0 ] && return
+  [ "${EUID:-"$(id -u)"}" -eq 0 ] && return
 
   error "cannot perform the installation: Permission denied"
   exit 1
@@ -436,7 +436,7 @@ assert_is_root() {
 #   with a status of 1).
 #################################################
 assert_valid_cwd() {
-  [ -f "./`basename "${0}"`" ] && return
+  [ -f "./${0##*/}" ] && return
 
   error "cannot perform the installation: Invalid working directory"
   exit 1
@@ -457,7 +457,8 @@ assert_valid_cwd() {
 #   with a status of 1).
 #################################################
 assert_installed() {
-  for cmd_name in "$@"; do
+  local cmd_name=""
+  for cmd_name in "${@}"; do
     command_exists "${cmd_name}" && return
   done
 
@@ -581,13 +582,13 @@ install_local() {
   # modified to contain the actual logic necessary
   # for connecting to a VPN server.
   if confirm "Install 'outline-cli' by Jigsaw LLC?" "y"; then
-    outline_go_binary="go"
-    outline_go_version="`prompt "Select a Go version to compile 'outline-cli' with [latest/local/1.22.0/...]" "latest"`"
+    local outline_go_binary="go"
+    local outline_go_version="$(prompt "Select a Go version to compile 'outline-cli' with [latest/local/1.22.0/...]" "latest")"
     if [ "${outline_go_version}" = "latest" ]; then
       outline_go_version=""
     fi
     if [ "${outline_go_version}" != "local" ]; then
-      outline_go_binary="`go_install ".go" "${outline_go_version}"`"
+      outline_go_binary="$(go_install ".go" "${outline_go_version}")"
       [ -n "${outline_go_binary}" ] || return
     fi
 
@@ -597,7 +598,7 @@ install_local() {
       outline_install "src/usr/local/bin/__vpn_connect" "${outline_go_binary}" || return
     fi
   else
-    outline_wrapper_cmd="`prompt "Enter a command used to connect to a VPN server"`"
+    local outline_wrapper_cmd="$(prompt "Enter a command used to connect to a VPN server")"
     if [ -z "${outline_wrapper_cmd}" ]; then
       error "failed to create a wrapper: Invalid command"
       return
@@ -607,7 +608,7 @@ install_local() {
   fi
 
   # Prompt for a name to symlink the __vpn_manager command.
-  vpn_manager_symlink_name="`prompt "Enter a short name for the vpn-manager command [${DEFAULT_VPN_MANAGER_NAME}]" "${DEFAULT_VPN_MANAGER_NAME}"`"
+  local vpn_manager_symlink_name="$(prompt "Enter a short name for the vpn-manager command [${DEFAULT_VPN_MANAGER_NAME}]" "${DEFAULT_VPN_MANAGER_NAME}")"
 
   # Unwrap the __vpn_connect and __vpn_manager commands, and
   # create a symlink for __vpn_manager with the user-specified name.
@@ -650,23 +651,23 @@ install_remote() {
 
   # Clone the latest available tag and cd into it.
   git clone "${REPO}" --depth 1 --branch \
-    "`git ls-remote --tags --sort="-v:refname" "${REPO}" | head -n 1 | cut -d/ -f3`" && \
-    [ -n "`basename "${REPO}"`" ] && \
-    [ -f "./`basename "${REPO}"`/install" ] && \
-    cd "./`basename "${REPO}"`" || \
+    "$(git ls-remote --tags --sort="-v:refname" "${REPO}" | head -n 1 | cut -d/ -f3)" && \
+    [ -n "${REPO##*/}" ] && \
+    [ -f "./${REPO##*/}/install" ] && \
+    cd "./${REPO##*/}" || \
     return
 
   # Rebuild the arguments.
-  inline_args=""
+  local inline_args=""
   if [ "${USE_DEFAULT_RESPONSE}" = "true" ]; then
     inline_args="${inline_args} -y"
   fi
 
   # Perform the installation.
-  ./install ${inline_args}
+  ./install.sh ${inline_args}
 
   # Delete the cloned repo.
-  rm -rf -- "../`basename "${REPO}"`"
+  rm -rf -- "../${REPO##*/}"
 }
 
 #################################################
@@ -690,7 +691,7 @@ main() {
     shift 2> /dev/null
   done
 
-  if [ "`basename "${0}"`" = "install" ]; then
+  if [ "${0##*/}" = "install.sh" ]; then
     # The script is being executed from a local file,
     # i.e., the repository has already been cloned.
     # Proceed to the main entry point.
@@ -703,4 +704,4 @@ main() {
   fi
 }
 
-main "$@"
+main "${@}"
