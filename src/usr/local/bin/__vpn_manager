@@ -6,7 +6,7 @@
 #            Configure app details.             #
 #################################################
 APP_NAME="outline"
-APP_VERSION="2.1.1"
+APP_VERSION="3.0.0"
 APP_DIRECTORY="/var/lib/${APP_NAME}"
 
 #################################################
