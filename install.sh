@@ -601,7 +601,7 @@ install_remote() {
   git clone "${REPO}" --depth 1 --branch \
     "$(git ls-remote --tags --sort="-v:refname" "${REPO}" | head -n 1 | cut -d/ -f3)" && \
     [ -n "${REPO##*/}" ] && \
-    [ -f "./${REPO##*/}/install" ] && \
+    [ -f "./${REPO##*/}/install.sh" ] && \
     cd "./${REPO##*/}" || \
     return
 
