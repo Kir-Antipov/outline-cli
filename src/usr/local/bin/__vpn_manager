@@ -6,53 +6,122 @@
 #            Configure app details.             #
 #################################################
 APP_NAME="outline"
+APP_VERSION="2.1.1"
+APP_DIRECTORY="/var/lib/${APP_NAME}"
 
 #################################################
 #             Configure file paths.             #
 #################################################
-DATA_DIRECTORY="/var/lib/${APP_NAME}"
-STORAGE_FILENAME="${DATA_DIRECTORY}/storage"
-SESSION_FILENAME="${DATA_DIRECTORY}/session"
-LOG_FILENAME="/var/log/${APP_NAME}"
+CONFIG_FILENAME="${APP_DIRECTORY}/config.json"
+STATE_FILENAME="${APP_DIRECTORY}/state.json"
+LOG_FILENAME="${APP_DIRECTORY}/log.txt"
 
 #################################################
 #            Configure notifications.           #
 #################################################
-NOTIFICATION_TITLE="$(echo "${APP_NAME}" | sed -E 's/(.)/\U\1/')"
-NOTIFICATION_ICON_SUCCESS="dialog-positive"
-NOTIFICATION_ICON_FAILURE="dialog-error"
-NOTIFICATION_TIMEOUT=5000
-
-NOTIFICATION_ICON_CONNECTED="network-wireless"
-NOTIFICATION_BODY_CONNECTED="Connected to %name% (%ip%)"
-
-NOTIFICATION_ICON_DISCONNECTED="network-offline"
-NOTIFICATION_BODY_DISCONNECTED="Disconnected from %name% (%ip%)"
-NOTIFICATION_BODY_DISCONNECTED_UNKNOWN="Disconnected"
+NOTIFICATION_TITLE=""
+NOTIFICATION_TIMEOUT=""
+NOTIFICATION_BODY_CONNECTED=""
+NOTIFICATION_BODY_DISCONNECTED=""
+NOTIFICATION_BODY_DISCONNECTED_UNKNOWN=""
+NOTIFICATION_ICON_SUCCESS=""
+NOTIFICATION_ICON_FAILURE=""
+NOTIFICATION_ICON_CONNECTED=""
+NOTIFICATION_ICON_DISCONNECTED=""
 
 #################################################
-#   Configure internal implementation details.  #
-#################################################
-SOL="" # START_OF_LINE
-
-#################################################
-# Ensures that the storage file exists.
+# Ensures that the config file exists.
 # Arguments:
 #   None
 #################################################
-init_storage() {
-  [ -d "${DATA_DIRECTORY}" ] || (mkdir -p "${DATA_DIRECTORY}" && chmod 600 "${DATA_DIRECTORY}")
-  [ -f "${STORAGE_FILENAME}" ] || (touch "${STORAGE_FILENAME}" && chmod 600 "${STORAGE_FILENAME}")
+init_config() {
+  [ -f "${CONFIG_FILENAME}" ] && return
+
+  mkdir -m 700 -p "$(dirname "${CONFIG_FILENAME}")" &&
+  touch "${CONFIG_FILENAME}" &&
+  chmod 600 "${CONFIG_FILENAME}" &&
+  cat "${APP_DIRECTORY}/storage" 2> /dev/null | jq -Rs '{
+    keys: .
+      | split("\n") | map(.
+        | split("=") | select(length > 1)
+        | [(.[0] | gsub("%20";"=";"g")), (.[1:] | join("="))])
+      | to_entries | map({ id: (.key + 1), name: .value[0], url: .value[1] }),
+    remotes: [],
+    notifications: {
+      title: "Outline",
+      timeout: 5000,
+      messages: {
+        connected: "Connected to %name% (%ip%)",
+        disconnected: "Disconnected from %name% (%ip%)",
+        disconnected_unknown: "Disconnected"
+      },
+      icons: {
+        success: "dialog-positive",
+        failure: "dialog-error",
+        connected: "network-wireless",
+        disconnected: "network-offline"
+      }
+    },
+    exclude: [
+      "192.168.0.0/16",
+      "172.16.0.0/12",
+      "10.0.0.0/8",
+      "!10.233.233.0/24",
+      ":22"
+    ]
+  }' > "${CONFIG_FILENAME}" &&
+  rm -f "${APP_DIRECTORY}/storage"
 }
 
 #################################################
-# Ensures that the session file exists.
+# Ensures that the state file exists.
 # Arguments:
 #   None
 #################################################
-init_session() {
-  [ -d "${DATA_DIRECTORY}" ] || (mkdir -p "${DATA_DIRECTORY}" && chmod 600 "${DATA_DIRECTORY}")
-  [ -f "${SESSION_FILENAME}" ] || (touch "${SESSION_FILENAME}" && chmod 600 "${SESSION_FILENAME}")
+init_state() {
+  [ -f "${STATE_FILENAME}" ] && return
+
+  mkdir -m 700 -p "$(dirname "${STATE_FILENAME}")" &&
+  touch "${STATE_FILENAME}" &&
+  chmod 600 "${STATE_FILENAME}" &&
+  jq -n '{ status: "disconnected", key_id: null }' > "${STATE_FILENAME}" &&
+  rm -f "${APP_DIRECTORY}/session"
+}
+
+#################################################
+# Ensures that the log file exists.
+# Arguments:
+#   None
+#################################################
+init_log() {
+  [ -f "${LOG_FILENAME}" ] && return
+
+  mkdir -m 700 -p "$(dirname "${LOG_FILENAME}")" &&
+  touch "${LOG_FILENAME}" &&
+  chmod 640 "${LOG_FILENAME}" &&
+  rm -f "/var/log/${APP_NAME}"
+}
+
+#################################################
+# Initializes notification settings.
+# Arguments:
+#   None
+#################################################
+init_notifications() {
+  eval "$(jq -r '
+    (.notifications // {}) as $n |
+    ($n.messages // {}) as $m |
+    ($n.icons // {}) as $i |
+    "NOTIFICATION_TITLE=\(($n.title // "Outline")|@sh)",
+    "NOTIFICATION_TIMEOUT=\(($n.timeout // 5000)|@sh)",
+    "NOTIFICATION_BODY_CONNECTED=\(($m.connected // "Connected to %name% (%ip%)")|@sh)",
+    "NOTIFICATION_BODY_DISCONNECTED=\(($m.disconnected // "Disconnected from %name% (%ip%)")|@sh)",
+    "NOTIFICATION_BODY_DISCONNECTED_UNKNOWN=\(($m.disconnected_unknown // "Disconnected")|@sh)",
+    "NOTIFICATION_ICON_SUCCESS=\(($i.success // "dialog-positive")|@sh)",
+    "NOTIFICATION_ICON_FAILURE=\(($i.failure // "dialog-error")|@sh)",
+    "NOTIFICATION_ICON_CONNECTED=\(($i.connected // "network-wireless")|@sh)",
+    "NOTIFICATION_ICON_DISCONNECTED=\(($i.disconnected // "network-offline")|@sh)"
+  ' "${CONFIG_FILENAME}")"
 }
 
 #################################################
@@ -79,6 +148,20 @@ error() {
 #################################################
 command_exists() {
   command -v "${1}" > /dev/null 2>& 1
+}
+
+#################################################
+# Overwrites a specified file with the contents
+# from stdin, maintaining the file permissions.
+# Arguments:
+#   $1. The filename to overwrite.
+# Inputs:
+#   Reads new content from stdin.
+# Outputs:
+#   Writes the new content to the specified file.
+#################################################
+overwrite() {
+  awk 'BEGIN{RS="";getline<"-";print>ARGV[1]}' "${1}"
 }
 
 #################################################
@@ -233,21 +316,6 @@ is_valid_transport() {
 }
 
 #################################################
-# Extracts the server IP address from the given
-# access key.
-# Arguments:
-#   $1. The key to extract the IP address from.
-# Outputs:
-#   Writes the extracted IP address to stdout.
-# Returns:
-#   0 if the IP address was extracted;
-#   otherwise, a non-zero status.
-#################################################
-extract_key_ip() {
-  echo "$(normalize_key "${1}")" | grep -oE '@.+:[0-9]{1,5}(/|#|$)' | grep -oE '[^@]+:[0-9]+'
-}
-
-#################################################
 # Normalizes the given access key by converting
 # it to its actual static representation.
 # Arguments:
@@ -313,115 +381,59 @@ json2ss() {
 }
 
 #################################################
-# Extracts the default name of the given key.
+# Formats and prints all access key entries based
+# on the provided format string.
+# The formats available for substitution are:
+#   %name%  - replaced with the access key name
+#   %ip%    - replaced with the access key IP
+#   %index% - replaced with the access key ID
 # Arguments:
-#   $1. The key to extract the default name from.
-# Outputs:
-#   Writes the extracted key name to stdout.
+#   $1. A composite format string.
+#   $2. A JSON file containing access keys.
+# Inputs:
+#   If $2 is omitted, reads the access key
+#   entries to format from stdin.
 #################################################
-extract_default_key_name() {
-  local normalized_key="$(normalize_key "${1}")"
-  if echo "${normalized_key}" | grep -qF '#'; then
-    echo "${normalized_key}" | sed 's/[^#]*#//' | urid
-  else
-    extract_key_ip "${normalized_key}"
-  fi
-}
-
-#################################################
-# Extracts the name of the access key from
-# the given key entry.
-# Arguments:
-#   $1. The entry to extract the name from.
-# Outputs:
-#   Writes the extracted entry name to stdout.
-# Returns:
-#   0 if the entry name was extracted;
-#   otherwise, a non-zero status.
-#################################################
-extract_key_name() {
-  decode_key_name "$(echo "${1}" | sed 's/=.*//')"
-}
-
-#################################################
-# Extracts the transport string from the given
-# access key entry.
-# Arguments:
-#   $1. The entry to extract the transport from.
-# Outputs:
-#   Writes the extracted transport to stdout.
-# Returns:
-#   0 if the transport string was extracted;
-#   otherwise, a non-zero status.
-#################################################
-extract_key_transport() {
-  normalize_key "$(echo "${1}" | sed 's/[^=]*=//')"
-}
-
-#################################################
-# Encodes the name of an access key.
-# Arguments:
-#   $1. The access key name to encode.
-# Outputs:
-#   Writes the encoded access key name to stdout.
-#################################################
-encode_key_name() {
-  echo "${1}" | sed 's/=/%20/g'
-}
-
-#################################################
-# Decodes the name of an access key.
-# Arguments:
-#   $1. The access key name to decode.
-# Outputs:
-#   Writes the decoded access key name to stdout.
-#################################################
-decode_key_name() {
-  echo "${1}" | sed 's/%20/=/g'
+format_keys() {
+  jq -r --arg format "${1}" '
+    (if (.id|type) == "number" then . else .keys[]? end) as $key |
+    $format
+      | split("%index%") | join($key.id|tostring)
+      | split("%name%") | join($key.name)
+      | split("%ip%") | join(($key.access_url // $key.url)
+      | capture(".*@(?<ip>.+:[0-9]{1,5})(/|#|$).*").ip? // "N/A")' "${2:-"-"}"
 }
 
 #################################################
 # Prints the given access key entry according to
 # the provided format string.
-# The formats available for substitution are:
-#   %name%  - replaced with the access key name
-#   %ip%    - replaced with the access key IP
-#   %index% - replaced with $3
 # Arguments:
 #   $1. A composite format string.
 #   $2. The access key entry to format.
-#   $3=1. The index of the given entry.
 # Outputs:
 #   Writes the formatted entry to stdout.
 #################################################
 format_key() {
-  echo "${1}" \
-    | sed "s/%name%/$(extract_key_name "${2}" | sed 's/&/\\&/g')/g" \
-    | sed "s/%ip%/$(extract_key_ip "$(extract_key_transport "${2}")")/g" \
-    | sed "s/%index%/${3:-1}/g"
+  echo "${2}" | format_keys "${1}"
 }
 
 #################################################
-# Gets index of an access key using its name.
+# Infers the name of the given key.
 # Arguments:
-#   $1. The name of the access key to find.
+#   $1. The key to infer the name for.
 # Outputs:
-#   Writes the found index, if any, to stdout.
-# Returns:
-#   0 if the access key was found;
-#   otherwise, a non-zero status.
+#   Writes the inferred name to stdout.
 #################################################
-get_key_index() {
-  [ -f "${STORAGE_FILENAME}" ] || return 1
-
-  case "${1}" in
-    ""|*[!0-9]*) sed "s/^/${SOL}/" "${STORAGE_FILENAME}" | grep -m 1 -inF "${SOL}$(encode_key_name "${1}")=" | grep -o '^[0-9]*' ;;
-    *) [ -n "$(sed "${1}q;d" "${STORAGE_FILENAME}")" ] && echo "${1}" ;;
-  esac
+infer_key_name() {
+  if echo "${1}" | grep -qF '#'; then
+    echo "${1}" | sed 's/[^#]*#//' | urid
+  else
+    echo "${1}" | grep -oE '@.+:[0-9]{1,5}(/|#|$)' | grep -oE '[^@]+:[0-9]+'
+  fi
 }
 
 #################################################
-# Gets an access key using its name or index.
+# Retrieves an access key entry by name or index.
 # Arguments:
 #   $1. The name/index of the access key to get.
 # Outputs:
@@ -430,29 +442,56 @@ get_key_index() {
 #   0 if the access key was found;
 #   otherwise, a non-zero status.
 #################################################
-get_key() {
-  local key_index=$(get_key_index "${1}")
-  [ $? -eq 0 ] && sed "${key_index}q;d" "${STORAGE_FILENAME}"
+get_key_entry() {
+  jq -ce --arg query "${1}" '
+    (try ($query|tonumber) catch ($query|ascii_downcase)) as $q |
+    first(.keys[]? | select((.id == $q) or ((.name|ascii_downcase) == $q)))
+  ' "${CONFIG_FILENAME}"
 }
 
 #################################################
 # Adds a new access key to the storage.
 # Arguments:
 #   $1. The access key to store.
-#   $2=(ip $1). The name of the access key.
+#   $2. The name of the access key.
+#   $3. The access url associated with the key.
+# Returns:
+#   0 if the access key was added;
+#   otherwise, a non-zero status.
 #################################################
 add_key() {
-  is_valid_transport "${1}" || return 1
+  is_valid_transport "${1}" || return
+  local access_url="${3:-"$(normalize_key "${1}")"}"
+  local name="${2:-"$(infer_key_name "${access_url}")"}"
 
-  init_storage
-  local new_key_name="${2:-"$(extract_default_key_name "${1}")"}"
-  local existing_key_index="$(get_key_index "${new_key_name}")"
+  jq --arg name "${name}" --arg url "${1}" --arg access_url "${access_url}" '
+    ($name|ascii_downcase) as $q |
+    (.keys // []) as $k |
+    (
+      first($k[] | select((.id == $q) or ((.name|ascii_downcase) == $q))).id? //
+      first(range(1;$k|max_by(.id).id + 2) | select(. as $i | $k | all(.id != $i)))
+    ) as $id |
+    .keys |= ([
+      $k | map(select(.id != $id)) | .[],
+      { id: $id, name: $name, url: $url, access_url: $access_url }
+    ] | sort_by(.id))
+  ' "${CONFIG_FILENAME}" | overwrite "${CONFIG_FILENAME}"
+}
 
-  if [ -n "${existing_key_index}" ]; then
-    sed -i"" "${existing_key_index} c\\$(encode_key_name "${new_key_name}")=${1}" "${STORAGE_FILENAME}"
-  else
-    echo "$(encode_key_name "${new_key_name}")=${1}" >> "${STORAGE_FILENAME}"
-  fi
+#################################################
+# Updates an existing access key entry in storage
+# with the provided key details, replacing any
+# existing entry with the same ID.
+# Arguments:
+#   $1. The access key entry to update.
+# Returns:
+#   0 if the access key was updated;
+#   otherwise, a non-zero status.
+#################################################
+update_key() {
+  jq --argjson key "${1}" '
+    .keys |= ([. | map(select(.id != $key.id)) | .[], $key] | sort_by(.id))
+  ' "${CONFIG_FILENAME}" | overwrite "${CONFIG_FILENAME}"
 }
 
 #################################################
@@ -465,29 +504,29 @@ add_key() {
 #   otherwise, a non-zero status.
 #################################################
 remove_key() {
-  local existing_key_index="$(get_key_index "${1}")"
-  [ -n "${existing_key_index}" ] && sed -i"" "${existing_key_index}d" "${STORAGE_FILENAME}"
+  jq --arg query "${1}" '(
+    (try ($query|tonumber) catch ($query|ascii_downcase)) as $q |
+    (.keys|length) as $l |
+    (.keys|map(select((.id != $q) and ((.name|ascii_downcase) != $q)))) as $k |
+    .keys |= $k,
+    (null | halt_error(if ($l == ($k|length)) then 1 else 0 end))
+  )' "${CONFIG_FILENAME}" | overwrite "${CONFIG_FILENAME}"
 }
 
 #################################################
 # Lists all access keys stored in the storage.
 # Arguments:
-#   $1="%index%$ %name%$ %ip%". The format to use
+#   $1="%index% %name% %ip%". The format to use
 #     when printing the access keys.
 # Outputs:
 #   Writes the formatted access key entries
 #   to stdout.
 #################################################
 list_keys() {
-  init_storage
-
-  local list_entry_pattern="${1:-"%index%${SOL}%name%${SOL}%ip%"}"
-  local i=0
-
-  while IFS="" read -r key_entry || [ -n "${key_entry}" ]; do
-    i=$((${i} + 1))
-    format_key "${list_entry_pattern}" "${key_entry}" "${i}"
-  done < "${STORAGE_FILENAME}" | ([ -z "${1}" ] && column -s "${SOL}" -t || cat -)
+  local sep=""
+  format_keys "${1:-"%index%${sep}%name%${sep}%ip%"}" "${CONFIG_FILENAME}" | {
+    [ -z "${1}" ] && column -s "${sep}" -t || cat -
+  }
 }
 
 #################################################
@@ -495,7 +534,7 @@ list_keys() {
 # Arguments:
 #   None
 # Outputs:
-#   Writes the name of the relevant access key,
+#   Writes the id of the relevant access key,
 #   if any, to stdout.
 # Returns:
 #   0 if there is an active connection;
@@ -503,22 +542,11 @@ list_keys() {
 #   2 if the connection is temporarily suspended.
 #################################################
 get_status() {
-  init_session
-
-  local current_status_code="$(grep -o '^[0-9]*' "${SESSION_FILENAME}")"
-  local current_status_arg="$(sed 's/^[0-9]* //' "${SESSION_FILENAME}")"
-
-  case "${current_status_code}" in
-    0|1|2) ;;
-    *) return 1 ;;
-  esac
-
-  if [ -n "${current_status_arg}" ]; then
-    echo "${current_status_arg}"
-    return "${current_status_code}"
-  else
-    return 1
-  fi
+  jq -r '(
+    .key_id // "",
+    (if (.key_id|type) == "number" then .status|ascii_downcase else "" end) as $s |
+    null | halt_error(["connected", "disconnected", "suspended"] | index($s) // 1)
+  )' "${STATE_FILENAME}"
 }
 
 #################################################
@@ -563,19 +591,19 @@ terminate_or_kill() {
 #   otherwise, a non-zero status.
 #################################################
 disconnect() {
-  local disconnection_key_name; disconnection_key_name="$(get_status)"
-  local disconnection_status=$?
-  local disconnection_key="$(get_key "${disconnection_key_name}")"
-  if [ -n "${1}" ] && [ "${disconnection_status}" -ne 1 ]; then
-    disconnection_status=2
-  else
-    disconnection_status=1
-  fi
+  local key_id; key_id="$(get_status)"
+  local status_id=$?
+  local key_entry="$(get_key_entry "${key_id}")"
+  local status_name="disconnected"
+  [ -n "${1}" ] && [ "${status_id}" -ne 1 ] && status_name="suspended"
 
   terminate_or_kill __vpn_connect
 
-  echo "${disconnection_status} $(extract_key_name "${disconnection_key}")" > "${SESSION_FILENAME}"
-  [ -n "${disconnection_key}" ] && format_key "${2:-"%name%"}" "${disconnection_key}"
+  jq -n --arg status "${status_name}" --arg id "${key_id}" '{
+    status: $status,
+    key_id: (try ($id|tonumber) catch (null))
+  }' > "${STATE_FILENAME}"
+  [ -n "${key_entry}" ] && format_key "${2:-"%name%"}" "${key_entry}"
 }
 
 #################################################
@@ -597,25 +625,30 @@ disconnect() {
 #   otherwise, a non-zero status.
 #################################################
 connect() {
-  local connection_key_name="${1:-"$(get_status)"}"
-  local connection_key="$(get_key "${connection_key_name:-1}")"
-  if [ -z "${connection_key}" ]; then
-    error "unknown key: ${connection_key_name}"
+  local key_id="${1:-"$(get_status)"}"
+  local key_entry="$(get_key_entry "${key_id:-1}")"
+  if [ -z "${key_entry}" ]; then
+    error "unknown key: ${key_id}"
     return 1
   fi
 
+  local key_url="$(jq -rn --argjson key "${key_entry}" '$key.access_url // $key.url')"
+  local access_url="$(normalize_key "${key_url}")"
+  if [ "${key_url}" != "${access_url}" ]; then
+    key_entry="$(jq -cn --argjson key "${key_entry}" --arg url "${access_url}" '$key | .access_url |= $url')"
+    update_key "${key_entry}"
+  fi
+
   disconnect > /dev/null 2>& 1
-  /usr/local/bin/__vpn_connect -transport "$(extract_key_transport "${connection_key}")" > "${LOG_FILENAME}" 2>& 1 &
+  /usr/local/bin/__vpn_connect -transport "${access_url}" > "${LOG_FILENAME}" 2>& 1 &
   local connection_id=$!
   sleep 1
 
   if ps -p "${connection_id}" > /dev/null 2>& 1; then
-    echo "0 $(extract_key_name "${connection_key}")" > "${SESSION_FILENAME}"
-    format_key "${2:-"%name%"}" "${connection_key}"
-    return 0
+    jq -n --argjson key "${key_entry}" '{ status: "connected", key_id: $key.id }' > "${STATE_FILENAME}"
+    format_key "${2:-"%name%"}" "${key_entry}"
   else
     error "$(tail -n 1 "${LOG_FILENAME}" | sed 's/^\[ERROR\][ 0-9/:]*//')"
-    return 1
   fi
 }
 
@@ -663,18 +696,18 @@ execute_action() {
       ;;
 
     status)
-      local current_status_name; current_status_name="$(get_status)"
-      local current_status=$?
-      local current_status_key="$(get_key "${current_status_name}")"
+      local key_id; key_id="$(get_status)"
+      local status_id=$?
+      local key_entry="$(get_key_entry "${key_id}")"
 
-      if [ "${current_status}" -eq 0 ] && [ -n "${current_status_key}" ]; then
-        format_key "${NOTIFICATION_BODY_CONNECTED}" "${current_status_key}"
-      elif [ -n "${current_status_key}" ]; then
-        format_key "${NOTIFICATION_BODY_DISCONNECTED}" "${current_status_key}"
+      if [ "${status_id}" -eq 0 ] && [ -n "${key_entry}" ]; then
+        format_key "${NOTIFICATION_BODY_CONNECTED}" "${key_entry}"
+      elif [ -n "${key_entry}" ]; then
+        format_key "${NOTIFICATION_BODY_DISCONNECTED}" "${key_entry}"
       else
-        format_key "${NOTIFICATION_BODY_DISCONNECTED_UNKNOWN}" "${current_status_key}"
+        echo "${NOTIFICATION_BODY_DISCONNECTED_UNKNOWN}"
       fi
-      return "${current_status}"
+      return "${status_id}"
       ;;
 
     *) return 1 ;;
@@ -689,7 +722,7 @@ execute_action() {
 #   Writes version information to stdout.
 #################################################
 version() {
-  echo "vpn-manager 2.1.1"
+  echo "vpn-manager ${APP_VERSION}"
 }
 
 #################################################
@@ -784,6 +817,12 @@ main() {
     esac
     shift 2> /dev/null
   done
+
+  # Initialize everything we need.
+  init_log
+  init_state
+  init_config
+  init_notifications
 
   # Validate the parsed arguments and normalize the action name.
   case "${action}" in
