@@ -550,6 +550,42 @@ get_status() {
 }
 
 #################################################
+# Generates iptables and ip rules for setting or
+# removing routing rules specified by the config.
+# Arguments:
+#   $1="+". The action to perform:
+#      "+" to set the rules.
+#      "-" to unset the rules.
+# Outputs:
+#   Writes the iptables and ip rules to stdout.
+#################################################
+get_routing_rules() {
+  if ! command_exists "ip" || ! command_exists "iptables"; then
+    return 1
+  fi
+
+  local main_table="$([ -n "$(ip rule show table main 2> /dev/null)" ] && echo "main" || echo "default")"
+  jq -r --arg action "${1:-"+"}" --arg main_table "${main_table}" '
+    (if ($action == "+") then ["add", "-A"] else ["delete", "-D"] end) as [$ipr, $ipt] |
+    .exclude[]?
+      | select(type == "string")
+      | select(test("^!?((:\\d+)|((\\d{1,3}\\.){3}\\d{1,3}(/\\d{1,2})?)|(([a-fA-F0-9]{0,4}:){1,7}[a-fA-F0-9]{0,4}(/\\d{1,3})?))$"))
+      | (if (startswith("!")) then ["233", 23331] else [$main_table, 23332] end) as [$table, $priority]
+      | sub("^!";"")
+      | if (startswith(":")) then
+          (
+            "iptables -t mangle \($ipt) OUTPUT -p tcp --sport \(.[1:]|@sh) -j MARK --set-mark \(.[1:]|@sh)",
+            "iptables -t mangle \($ipt) OUTPUT -p udp --sport \(.[1:]|@sh) -j MARK --set-mark \(.[1:]|@sh)",
+            "ip rule \($ipr) fwmark \(.[1:]|@sh) table \($table|@sh) priority \($priority|@sh)"
+          )
+        else
+          "ip rule \($ipr) from all to \(@sh) table \($table|@sh) priority \($priority|@sh)"
+        end
+      | if ($action == "+") then . else "while \(.) 2> /dev/null; do :; done" end
+  ' "${CONFIG_FILENAME}"
+}
+
+#################################################
 # Terminates or forcefully kills a process
 # by its full name.
 # Arguments:
@@ -598,6 +634,7 @@ disconnect() {
   [ -n "${1}" ] && [ "${status_id}" -ne 1 ] && status_name="suspended"
 
   terminate_or_kill __vpn_connect
+  eval "$(get_routing_rules -)"
 
   jq -n --arg status "${status_name}" --arg id "${key_id}" '{
     status: $status,
@@ -645,6 +682,7 @@ connect() {
   sleep 1
 
   if ps -p "${connection_id}" > /dev/null 2>& 1; then
+    eval "$(get_routing_rules +)"
     jq -n --argjson key "${key_entry}" '{ status: "connected", key_id: $key.id }' > "${STATE_FILENAME}"
     format_key "${2:-"%name%"}" "${key_entry}"
   else

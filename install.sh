@@ -8,15 +8,6 @@
 REPO="https://github.com/Kir-Antipov/outline-cli"
 
 #################################################
-# The priority assigned to the routing rules
-# created by this script.
-# As the Outline Client uses the value of 23333,
-# we use a priority of 23332 to be a bit higher
-# (since lower numbers mean higher priority).
-#################################################
-IP_RULE_PRIORITY=23332
-
-#################################################
 # The default name for the __vpn_manager symlink.
 #################################################
 DEFAULT_VPN_MANAGER_NAME="vpn"
@@ -331,42 +322,6 @@ outline_wrapper_install() {
 }
 
 #################################################
-# Determines the main table name in the routing
-# policy database.
-# Arguments:
-#   None
-# Outputs:
-#   Writes the name of the main table to stdout.
-#   The value can be either "main" or "default".
-#################################################
-ip_rule_main_table() {
-  if [ -n "$(ip rule show table main 2> /dev/null)" ]; then
-    echo "main"
-  else
-    echo "default"
-  fi
-}
-
-#################################################
-# Fixes the routing rules when using
-# the Outline Client, which directs ALL requests
-# through the VPN server, and, obviously, breaks
-# access to the LAN.
-# Arguments:
-#   $1. The operation to perform.
-#       Supports "add" or "delete".
-#       Defaults to "add" if not supplied.
-# Returns:
-#   0 if the operation succeeds;
-#   otherwise, a non-zero status.
-#################################################
-ip_rule_fix() {
-  ip rule "${1:-"add"}" from all to "192.168.0.0/16" table "$(ip_rule_main_table)" priority "${IP_RULE_PRIORITY}"
-  ip rule "${1:-"add"}" from all to  "172.16.0.0/12" table "$(ip_rule_main_table)" priority "${IP_RULE_PRIORITY}"
-  # Outline uses 10.0.0.0/8, so let's avoid interfering with that. It's unlikely anyone will need it anyways.
-}
-
-#################################################
 # Copies the source file to the target location
 # and sets the permissions on the copied file.
 # Arguments:
@@ -532,8 +487,6 @@ uninstall() {
   rm -f "/usr/share/polkit-1/actions/vpn-manager.policy"
   rm -f "/etc/NetworkManager/dispatcher.d/vpn-manager-refresh"
 
-  ip_rule_fix delete
-
   if [ "${1}" = "true" ]; then
     rm -rf "/var/lib/outline"
     rm -f "/var/log/outline"
@@ -628,11 +581,6 @@ install_local() {
   # NetworkManager integration.
   if command_exists NetworkManager && confirm "Enable NetworkManager integration?" "y"; then
     unwrap "src/etc/NetworkManager/dispatcher.d/vpn-manager-refresh" 500
-  fi
-
-  # LAN fix.
-  if confirm "Enable LAN access while the VPN connection is active?" "y"; then
-    ip_rule_fix
   fi
 }
 
