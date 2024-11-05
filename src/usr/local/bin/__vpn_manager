@@ -346,13 +346,13 @@ normalize_key() {
 #   Writes the Shadowsocks URI to stdout.
 #################################################
 ss642ss() {
-  echo "${1}" | jq -Rr '.
-    | sub("ss://"; "")
-    | split("#") | (.[1] |= ([.] | map(select(.) | "#\(.)")[0] // ""))
-    | (.[0] |= split("/")) | (.[0][1] |= ([.] | map(select(.) | "/\(.)")[0] // ""))
-    | (.[0][0] |= (@base64d | sub("\\s"; "") | split(":|@"; null)))
-    | flatten
-    | "ss://\("\(.[0]):\(.[1])"|@base64)@\(.[2]):\(.[3])\(.[4])\(.[5])"'
+  jq -nr --arg key "${1}" '$key
+    | capture("^ss://(?<val>[a-zA-Z0-9+/]+?={0,3})(?<rem>(/|\\?|#)[^/]*)?$")
+    | [
+        (.val | @base64d | gsub("\\s"; "") | split(":|@"; null) | .[]),
+        (.rem // "")
+      ]
+    | "ss://\("\(.[0]):\(.[1])"|@base64|gsub("=";""))@\(.[2]):\(.[3])\(.[4])"'
 }
 
 #################################################
@@ -377,7 +377,14 @@ ssconf2ss() {
 #   Writes the Shadowsocks URI to stdout.
 #################################################
 json2ss() {
-  echo "${1}" | jq -r '"ss://\("\(.method):\(.password)"|@base64)@\(.server):\(.server_port)\([.prefix]|map(select(.)|"#\(@uri)")[0]//"")"'
+  jq -nr --argjson key "${1}" '$key |
+    "ss://\(
+      "\(.method):\(.password)" | @base64 | gsub("="; "")
+    )@\(.server):\(.server_port)\(
+      (.prefix | select(length > 0) | "/?prefix=\(@uri)") // ""
+    )\(
+      (.name | select(length > 0) | "#\(@uri)") // ""
+    )"'
 }
 
 #################################################
